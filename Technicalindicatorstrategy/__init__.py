@@ -10,3 +10,4 @@ from . import sma
 from . import smartmoney
 from . import williams
 from . import testsma
+from . import tvl_sma
