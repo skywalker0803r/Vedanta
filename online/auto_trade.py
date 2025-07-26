@@ -30,12 +30,10 @@ def get_min_trade_amount(client, symbol):
     return markets[symbol]["limits"]["amount"]["min"]
 
 # ✅ 自動交易主程序
-def auto_trade(symbol="ETH/USDT", interval="1m", usdt_per_order=50, strategy=None,run_once=True):
+def auto_trade(symbol="ETH/USDT", interval="1m", usdt_per_order=50, strategy=None, run_once=True):
     client = create_binance_client()
     min_amount = get_min_trade_amount(client, symbol)
     print(f"✅ {symbol} 最小下單量為 {min_amount}")
-
-    last_position = 0  # -1: 空單, 0: 無單, 1: 多單
 
     interval_sec = {
         "1m": 60, "3m": 180, "5m": 300, "15m": 900,
@@ -45,6 +43,13 @@ def auto_trade(symbol="ETH/USDT", interval="1m", usdt_per_order=50, strategy=Non
 
     def process_once():
         try:
+            # 每次重新從帳戶餘額判斷目前持倉狀態
+            balance = client.fetch_balance()
+            coin = symbol.split("/")[0]
+            free_coin = balance['free'].get(coin, 0)
+            # 判斷是否持有多單（只要大於最小下單量就視為有持倉）
+            last_position = 1 if free_coin >= min_amount else 0
+
             now = datetime.datetime.utcnow()
             df = strategy.get_signals(symbol.replace("/", ""), interval, now)
             latest = df.iloc[-1]
@@ -52,40 +57,35 @@ def auto_trade(symbol="ETH/USDT", interval="1m", usdt_per_order=50, strategy=Non
             signal = latest["signal"]
             print(f"[{now:%Y-%m-%d %H:%M:%S}] Close: {close:.2f}, Signal: {signal}")
 
-            # ✅ 多單信號：買入
-            if signal == 1 and last_position <= 0:
+            # 多單信號且目前無多單，則買入
+            if signal == 1 and last_position == 0:
                 amount = usdt_per_order / close
                 if amount >= min_amount:
                     print(f"🟢 黃金交叉 → 市價買入 {amount:.6f} {symbol}")
                     client.create_market_buy_order(symbol, amount)
-                    last_position = 1
                 else:
                     print(f"⚠️ 買入失敗，數量 {amount:.6f} 小於最小下單量 {min_amount}")
 
-            # ✅ 空單信號：賣出
-            elif signal == -1 and last_position >= 0:
-                coin = symbol.split("/")[0]
-                amount = client.fetch_balance()[coin]["free"]
+            # 空單信號且目前有多單，則賣出
+            elif signal == -1 and last_position == 1:
+                amount = free_coin
                 if amount >= min_amount:
                     print(f"🔴 死亡交叉 → 市價賣出 {amount:.6f} {coin}")
                     client.create_market_sell_order(symbol, amount)
-                    last_position = -1
                 else:
                     print(f"⚠️ 賣出失敗，數量 {amount:.6f} 小於最小下單量 {min_amount}")
 
             else:
                 print("⏸ 無操作")
 
-            # ✅ 顯示餘額
+            # 顯示餘額
             balance = client.fetch_balance()
-            coin = symbol.split("/")[0]
             print(f"{coin} 餘額：{balance['total'].get(coin, 0)}")
             print(f"USDT 餘額：{balance['total'].get('USDT', 0)}")
 
         except Exception as e:
             print(f"❌ 發生錯誤：{e}")
 
-    # ✅ 如果是單次執行模式
     if run_once:
         process_once()
     else:
