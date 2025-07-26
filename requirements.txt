@@ -4,3 +4,8 @@ matplotlib
 requests
 ccxt
 python-dotenv
+google
+google-auth 
+google-api-python-client 
+google-cloud-core
+google-generativeai
