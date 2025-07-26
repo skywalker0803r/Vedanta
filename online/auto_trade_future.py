@@ -100,13 +100,12 @@ def auto_trade_futures(symbol="ETH/USDT",
             order_amt = round_step_size(order_amt, step_size)
 
             # 1️⃣ 平倉階段
-            epsilon = step_size / 2
-            if position_side == 'long' and signal == -1:
+            if position_side == 'long' and (signal == -1 or position_amt > 0):
                 print("📉 平多單中...")
-                safe_amt = max(0, position_amt - epsilon)
+                safe_amt = position_amt  # Remove epsilon
                 close_amt = round_step_size(safe_amt, step_size)
-                print(f"➡ 平多單數量: {close_amt}")
-                if close_amt >= min_amount:
+                print(f"調試：position_amt={position_amt}, safe_amt={safe_amt}, close_amt={close_amt}")
+                if close_amt >= min_amount and position_amt > 0:
                     try:
                         client.create_order(
                             symbol=symbol,
@@ -115,15 +114,23 @@ def auto_trade_futures(symbol="ETH/USDT",
                             amount=close_amt,
                             params={"reduceOnly": True}
                         )
+                        print(f"✅ 平多單成功: {close_amt}")
                     except Exception as e:
                         print(f"❌ 平多單失敗: {e}")
+                        time.sleep(1)
+                        position_amt, position_side = get_position(client, symbol)
+                        print(f"重新檢查持倉：{position_amt:.6f}（{position_side}）")
+                        if position_amt == 0:
+                            print("✅ 持倉已平倉，無需進一步操作")
+                else:
+                    print(f"⛔ 無效平倉數量: {close_amt} 或無持倉")
 
-            elif position_side == 'short' and signal == 1:
+            elif position_side == 'short' and (signal == 1 or position_amt < 0):
                 print("📈 平空單中...")
-                safe_amt = max(0, abs(position_amt) - epsilon)
+                safe_amt = abs(position_amt)
                 close_amt = round_step_size(safe_amt, step_size)
-                print(f"➡ 平空單數量: {close_amt}")
-                if close_amt >= min_amount:
+                print(f"調試：position_amt={position_amt}, safe_amt={safe_amt}, close_amt={close_amt}")
+                if close_amt >= min_amount and position_amt < 0:
                     try:
                         client.create_order(
                             symbol=symbol,
@@ -132,8 +139,16 @@ def auto_trade_futures(symbol="ETH/USDT",
                             amount=close_amt,
                             params={"reduceOnly": True}
                         )
+                        print(f"✅ 平空單成功: {close_amt}")
                     except Exception as e:
                         print(f"❌ 平空單失敗: {e}")
+                        time.sleep(1)
+                        position_amt, position_side = get_position(client, symbol)
+                        print(f"重新檢查持倉：{position_amt:.6f}（{position_side}）")
+                        if position_amt == 0:
+                            print("✅ 持倉已平倉，無需進一步操作")
+                else:
+                    print(f"⛔ 無效平倉數量: {close_amt} 或無持倉")
 
             # 2️⃣ 更新倉位
             time.sleep(1)
@@ -142,10 +157,18 @@ def auto_trade_futures(symbol="ETH/USDT",
             # 3️⃣ 開倉階段
             if signal == 1 and position_side == 'none':
                 print(f"✅ 開多單 {order_amt}")
-                client.create_order(symbol=symbol, type='market', side='buy', amount=order_amt)
+                try:
+                    client.create_order(symbol=symbol, type='market', side='buy', amount=order_amt)
+                    print(f"✅ 開多單成功: {order_amt}")
+                except Exception as e:
+                    print(f"❌ 開多單失敗: {e}")
             elif signal == -1 and position_side == 'none':
                 print(f"✅ 開空單 {order_amt}")
-                client.create_order(symbol=symbol, type='market', side='sell', amount=order_amt)
+                try:
+                    client.create_order(symbol=symbol, type='market', side='sell', amount=order_amt)
+                    print(f"✅ 開空單成功: {order_amt}")
+                except Exception as e:
+                    print(f"❌ 開空單失敗: {e}")
             else:
                 print("⏸ 訊號未變或已有倉位，無操作")
 
@@ -153,3 +176,13 @@ def auto_trade_futures(symbol="ETH/USDT",
             print(f"❌ 執行錯誤: {e}")
 
         time.sleep(interval_sec)
+
+if __name__ == "__main__":
+    from Technicalindicatorstrategy import testsma
+    auto_trade_futures(
+        symbol="ETH/USDT", 
+        interval="1m", 
+        usdt_per_order=500, 
+        leverage=5, 
+        strategy=testsma
+    )
