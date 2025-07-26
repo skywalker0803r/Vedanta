@@ -11,3 +11,4 @@ from . import smartmoney
 from . import williams
 from . import testsma
 from . import tvl_sma
+from . import apy

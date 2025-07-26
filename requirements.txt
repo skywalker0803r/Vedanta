@@ -2,3 +2,5 @@ pandas
 numpy
 matplotlib
 requests
+ccxt
+python-dotenv
