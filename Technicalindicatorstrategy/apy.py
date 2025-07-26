@@ -52,23 +52,35 @@ def get_yield_history(pool_id: str) -> pd.DataFrame:
     df["timestamp"] = pd.to_datetime(df["timestamp"])  # 這裡已經是 datetime 格式
     return df[["timestamp", "apy"]]
 
-def detect_apy_signals(apy_df: pd.DataFrame, short_window: int = 1, long_window: int = 3) -> pd.DataFrame:
-    df = apy_df.copy()
-    df = df.sort_values("timestamp")
-    df["apy_sma_short"] = df["apy"].rolling(window=short_window).mean()
-    df["apy_sma_long"] = df["apy"].rolling(window=long_window).mean()
+def detect_apy_signals(apy_df: pd.DataFrame, short_window=3, long_window=7, roc_threshold=0.01):
+    df = apy_df.sort_values("timestamp").copy()
+    df["ema_short"] = df["apy"].ewm(span=short_window, adjust=False).mean()
+    df["ema_long"] = df["apy"].ewm(span=long_window, adjust=False).mean()
+    df["roc"] = df["apy"].pct_change()
 
     df["signal"] = 0
-    df["prev_short"] = df["apy_sma_short"].shift(1)
-    df["prev_long"] = df["apy_sma_long"].shift(1)
+    df["prev_ema_short"] = df["ema_short"].shift(1)
+    df["prev_ema_long"] = df["ema_long"].shift(1)
+    df["prev_roc"] = df["roc"].shift(1)
 
-    df.loc[(df["apy_sma_short"] > df["apy_sma_long"]) & (df["prev_short"] <= df["prev_long"]), "signal"] = 1
-    df.loc[(df["apy_sma_short"] < df["apy_sma_long"]) & (df["prev_short"] >= df["prev_long"]), "signal"] = -1
+    # 多頭訊號：短期 EMA 穿越長期且變化率足夠大
+    condition_long = (
+        (df["ema_short"] > df["ema_long"]) &
+        (df["prev_ema_short"] <= df["prev_ema_long"]) &
+        (df["roc"] > roc_threshold)
+    )
+    # 空頭訊號：短期 EMA 跌破長期且變化率足夠小
+    condition_short = (
+        (df["ema_short"] < df["ema_long"]) &
+        (df["prev_ema_short"] >= df["prev_ema_long"]) &
+        (df["roc"] < -roc_threshold)
+    )
+    df.loc[condition_long, "signal"] = 1
+    df.loc[condition_short, "signal"] = -1
 
-    # ✅ 確保 timestamp 為 naive datetime
     df["timestamp"] = df["timestamp"].dt.tz_localize(None)
-
     return df[["timestamp", "signal"]]
+
 
 
 def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300, n1: int = 1, n2: int = 3) -> pd.DataFrame:
@@ -78,6 +90,9 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300
     # Step 2: 取得相關池子
     token = symbol.replace("USDT", "").replace("BUSD", "")  # 例如 ENAUSDT -> ENA
     pool_df = get_token_related_pools(token)
+    
+    print("pool_df")
+    print(pool_df)
     if pool_df.empty:
         raise ValueError(f"No related pools found for token: {token}")
     pool_id = pool_df.iloc[0]["pool_id"]
@@ -99,6 +114,8 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300
     print("結束時間:", apy_df["timestamp"].max())
     print("筆數:", len(apy_df))
     print("APY 資料間隔（秒）:", apy_df["timestamp"].diff().dropna().dt.total_seconds().mode()[0])
+    print("apy_df")
+    print(apy_df)
 
 
 
