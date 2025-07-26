@@ -77,7 +77,7 @@ def close_all_positions(client, symbol):
     except Exception as e:
         print(f"❌ 關閉所有持倉失敗: {e}")
 
-def auto_trade_futures(symbol="ETH/USDT", interval="1m", usdt_per_order=50, leverage=5, strategy=None, max_retries=3):
+def auto_trade_futures(symbol="ETH/USDT", interval="1m", usdt_per_order=50, leverage=5, strategy=None, max_retries=3,run_once=True):
 
     client = create_binance_futures_client()
     set_leverage(client, symbol, leverage)
@@ -91,7 +91,7 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1m", usdt_per_order=50, leve
         "4h": 14400, "1d": 86400
     }.get(interval, 60)
 
-    while True:
+    def process_once():
         try:
             now = datetime.utcnow()
             df = strategy.get_signals(symbol.replace("/", ""), interval, now)
@@ -177,28 +177,11 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1m", usdt_per_order=50, leve
 
         except Exception as e:
             print(f"❌ 執行錯誤: {e}")
-
-        time.sleep(interval_sec)
-
-
-if __name__ == "__main__":
-    # 你需要自己準備策略模組，例如 Technicalindicatorstrategy.testsma
-    from Technicalindicatorstrategy import testsma
-
-    auto_trade_futures(
-        symbol="ETH/USDT",
-        interval="1m",
-        usdt_per_order=500,
-        leverage=5,
-        strategy=testsma
-    )
-from online.auto_trade_future import auto_trade_futures
-from Technicalindicatorstrategy import testsma
-
-auto_trade_futures(
-    symbol="ETH/USDT", 
-    interval="1m", 
-    usdt_per_order=500, 
-    leverage=5, 
-    strategy=testsma
-)
+    
+    # ✅ 如果是單次執行模式
+    if run_once:
+        process_once()
+    else:
+        while True:
+            process_once()
+            time.sleep(interval_sec)

@@ -30,7 +30,7 @@ def get_min_trade_amount(client, symbol):
     return markets[symbol]["limits"]["amount"]["min"]
 
 # ✅ 自動交易主程序
-def auto_trade(symbol="ETH/USDT", interval="1m", usdt_per_order=50, strategy=None):
+def auto_trade(symbol="ETH/USDT", interval="1m", usdt_per_order=50, strategy=None,run_once=True):
     client = create_binance_client()
     min_amount = get_min_trade_amount(client, symbol)
     print(f"✅ {symbol} 最小下單量為 {min_amount}")
@@ -43,7 +43,7 @@ def auto_trade(symbol="ETH/USDT", interval="1m", usdt_per_order=50, strategy=Non
         "4h": 14400, "1d": 86400
     }[interval]
 
-    while True:
+    def process_once():
         try:
             now = datetime.datetime.utcnow()
             df = strategy.get_signals(symbol.replace("/", ""), interval, now)
@@ -85,4 +85,10 @@ def auto_trade(symbol="ETH/USDT", interval="1m", usdt_per_order=50, strategy=Non
         except Exception as e:
             print(f"❌ 發生錯誤：{e}")
 
-        time.sleep(interval_sec)
+    # ✅ 如果是單次執行模式
+    if run_once:
+        process_once()
+    else:
+        while True:
+            process_once()
+            time.sleep(interval_sec)
