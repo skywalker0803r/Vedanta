@@ -28,7 +28,7 @@ def set_leverage(client, symbol, leverage):
     except Exception as e:
         print(f"❌ 槓桿設定失敗: {e}")
 
-# ✅ 取得倉位資訊
+# ✅ 查倉位資訊
 def get_position(client, symbol):
     try:
         positions = client.fetch_positions([symbol])
@@ -48,7 +48,7 @@ def get_usdt_balance(client):
         print(f"❌ 查餘額錯誤: {e}")
         return 0
 
-# ✅ 取得最小下單量與精度
+# ✅ 查最小下單量與精度
 def get_order_precision(client, symbol):
     try:
         market = client.load_markets()[symbol]
@@ -59,11 +59,11 @@ def get_order_precision(client, symbol):
         print(f"❌ 無法取得精度資訊: {e}")
         return 0.01, 0.001
 
-# ✅ 四捨五入到對應精度
+# ✅ 四捨五入到精度
 def round_step_size(amount, step_size):
     return round(round(amount / step_size) * step_size, 8)
 
-# ✅ 自動交易主程序
+# ✅ 自動交易主程式
 def auto_trade_futures(symbol="ETH/USDT", 
                        interval="1m", 
                        usdt_per_order=50, 
@@ -100,16 +100,43 @@ def auto_trade_futures(symbol="ETH/USDT",
             order_amt = round_step_size(order_amt, step_size)
 
             # 1️⃣ 平倉階段
+            epsilon = step_size / 2
             if position_side == 'long' and signal == -1:
                 print("📉 平多單中...")
-                client.create_order(symbol=symbol, type='market', side='sell', amount=position_amt, params={"reduceOnly": True})
-                time.sleep(1)
+                safe_amt = max(0, position_amt - epsilon)
+                close_amt = round_step_size(safe_amt, step_size)
+                print(f"➡ 平多單數量: {close_amt}")
+                if close_amt >= min_amount:
+                    try:
+                        client.create_order(
+                            symbol=symbol,
+                            type='market',
+                            side='sell',
+                            amount=close_amt,
+                            params={"reduceOnly": True}
+                        )
+                    except Exception as e:
+                        print(f"❌ 平多單失敗: {e}")
+
             elif position_side == 'short' and signal == 1:
                 print("📈 平空單中...")
-                client.create_order(symbol=symbol, type='market', side='buy', amount=abs(position_amt), params={"reduceOnly": True})
-                time.sleep(1)
+                safe_amt = max(0, abs(position_amt) - epsilon)
+                close_amt = round_step_size(safe_amt, step_size)
+                print(f"➡ 平空單數量: {close_amt}")
+                if close_amt >= min_amount:
+                    try:
+                        client.create_order(
+                            symbol=symbol,
+                            type='market',
+                            side='buy',
+                            amount=close_amt,
+                            params={"reduceOnly": True}
+                        )
+                    except Exception as e:
+                        print(f"❌ 平空單失敗: {e}")
 
             # 2️⃣ 更新倉位
+            time.sleep(1)
             position_amt, position_side = get_position(client, symbol)
 
             # 3️⃣ 開倉階段
