@@ -26,6 +26,14 @@ Vedanta 是一個簡潔實用的加密貨幣交易策略回測與自動化交易
 
 ## 專案結構
 
+### 模組架構圖
+
+![回測模組](img/回測模組.png)
+
+![策略模組](img/策略模組.png)
+
+![交易模組](img/交易模組.png)
+
 -   `backtest_usage.ipynb`: 示範如何使用回測功能並可視化結果的 Jupyter Notebook，詳細展示了如何載入數據、應用策略、執行回測並繪製結果。
 -   `online_usage.ipynb`: 示範如何使用線上自動交易功能的 Jupyter Notebook，引導使用者配置和啟動自動交易。
 -   `run.py`: 專案的主要執行入口點，負責整合選定的交易策略（例如 `testsma`）與線上自動交易模組 (`auto_trade_future`)，實現策略的自動化執行。
