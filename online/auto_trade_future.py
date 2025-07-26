@@ -16,21 +16,9 @@ def create_binance_futures_client():
         'options': {'defaultType': 'future'}
     })
     client.set_sandbox_mode(testnet)
+    client.load_markets()
     print(f"✅ 使用 {'Testnet' if testnet else '主網'} 模式")
     return client
-
-# 設定持倉模式（One-Way 或 Hedge）
-def set_position_mode(client, hedge_mode=False, symbol="ETH/USDT"):
-    try:
-        market = client.market(symbol)
-        market_id = market['id']
-        # marginType 設成 cross，全倉
-        client.fapiPrivate_post_margintype({'symbol': market_id, 'marginType': 'CROSS'})
-        # positionSide (dualSidePosition) true 為 hedge，false 為 one-way
-        client.fapiPrivate_post_positionside_dual({'dualSidePosition': hedge_mode})
-        print(f"✅ 持倉模式設為 {'Hedge' if hedge_mode else 'One-Way'}")
-    except Exception as e:
-        print(f"❌ 設定持倉模式失敗: {e}")
 
 def set_leverage(client, symbol, leverage):
     try:
@@ -39,10 +27,11 @@ def set_leverage(client, symbol, leverage):
     except Exception as e:
         print(f"❌ 槓桿設定失敗: {e}")
 
-# 查持倉，回傳 (數量絕對值, 'long'/'short'/'none')
+
 def get_position(client, symbol):
     try:
-        positions = client.fapiPrivateGetPositionRisk()
+        balance_info = client.fetch_balance()
+        positions = balance_info.get('info', {}).get('positions', [])
         symbol_id = client.market(symbol)['id']
         for pos in positions:
             if pos['symbol'] == symbol_id:
@@ -91,7 +80,6 @@ def close_all_positions(client, symbol):
 def auto_trade_futures(symbol="ETH/USDT", interval="1m", usdt_per_order=50, leverage=5, strategy=None, max_retries=3):
 
     client = create_binance_futures_client()
-    set_position_mode(client, hedge_mode=False, symbol=symbol)  # One-Way 模式
     set_leverage(client, symbol, leverage)
 
     min_amount, step_size = get_order_precision(client, symbol)
@@ -127,7 +115,6 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1m", usdt_per_order=50, leve
                 if close_amt >= min_amount:
                     for i in range(max_retries):
                         try:
-                            # 重新取得持倉防止異常
                             pos_amt, pos_side = get_position(client, symbol)
                             if pos_side != 'long' or pos_amt == 0:
                                 print("⚠️ 無多單可平，跳過")
@@ -195,7 +182,7 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1m", usdt_per_order=50, leve
 
 
 if __name__ == "__main__":
-    # 請自行準備 Technicalindicatorstrategy 模組與 testsma 策略
+    # 你需要自己準備策略模組，例如 Technicalindicatorstrategy.testsma
     from Technicalindicatorstrategy import testsma
 
     auto_trade_futures(
@@ -205,3 +192,13 @@ if __name__ == "__main__":
         leverage=5,
         strategy=testsma
     )
+from online.auto_trade_future import auto_trade_futures
+from Technicalindicatorstrategy import testsma
+
+auto_trade_futures(
+    symbol="ETH/USDT", 
+    interval="1m", 
+    usdt_per_order=500, 
+    leverage=5, 
+    strategy=testsma
+)
