@@ -55,8 +55,17 @@ def backtest_signals(df: pd.DataFrame,
 
     # 報酬率
     total_return = df["equity"].iloc[-1] / initial_capital - 1
-    days = (df["timestamp"].iloc[-1] - df["timestamp"].iloc[0]).days
-    annual_return = (1 + total_return) ** (365 / days) - 1 if days > 0 else 0
+
+    # 精確計算回測區間（天數，浮點數）
+    time_diff_days = (df["timestamp"].iloc[-1] - df["timestamp"].iloc[0]).total_seconds() / (3600 * 24)
+
+    # 年化報酬率及日報酬率判斷
+    if time_diff_days < 30:
+        annual_return = None  # 期間太短，年化報酬率不適用
+        daily_return = (1 + total_return) ** (1 / time_diff_days) - 1 if time_diff_days > 0 else 0
+    else:
+        daily_return = (1 + total_return) ** (1 / time_diff_days) - 1
+        annual_return = (1 + daily_return) ** 365 - 1
 
     # 交易統計
     trade_returns, hold_bars = [], []
@@ -84,7 +93,8 @@ def backtest_signals(df: pd.DataFrame,
     return {
         "metric": {
             "總報酬率": round(total_return * 100, 2),
-            "年化報酬率": round(annual_return * 100, 2),
+            "年化報酬率": round(annual_return * 100, 2) if annual_return is not None else "期間過短，不適用",
+            "日報酬率": round(daily_return * 100, 4),
             "最大回撤": round(max_drawdown * 100, 2),
             "交易次數": num_trades,
             "勝率": round(win_rate * 100, 2),
