@@ -16,3 +16,4 @@ from . import news_sentiment_strategy
 from . import vegas
 from . import vegas_adx
 from . import stochastic_range_bound
+from . import superTrend
