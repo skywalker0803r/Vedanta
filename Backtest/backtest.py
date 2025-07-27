@@ -80,6 +80,7 @@ def backtest_signals(df: pd.DataFrame,
     avg_days = np.mean(hold_days) if hold_days else 0
 
     return {
+        "metric":{
         "總報酬率": round(total_return * 100, 2),
         "年化報酬率": round(annual_return * 100, 2),
         "最大回撤": round(max_drawdown * 100, 2),
@@ -87,6 +88,8 @@ def backtest_signals(df: pd.DataFrame,
         "勝率": round(win_rate * 100, 2),
         "平均持有天數": round(avg_days, 2),
         "平均每筆報酬率": round(avg_profit * 100, 2),
+    },
+    "fig":{
         "timestamp": df["timestamp"].values,
         "equity": df["equity"].values,
         "buy_and_hold": df["buy_and_hold"].values.tolist(),
@@ -94,4 +97,5 @@ def backtest_signals(df: pd.DataFrame,
         "close": df["close"].values,
         "signal": df["signal"].values,
         "position": df["position"].values,
+    }
     }
