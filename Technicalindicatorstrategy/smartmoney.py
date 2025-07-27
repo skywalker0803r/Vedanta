@@ -92,7 +92,7 @@ def detect_smart_money_signals(df: pd.DataFrame,
 
     return df
 
-def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300,
+def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 1000,
                             vegas1_period: int = 144,
                             vegas2_period: int = 169,
                             ema_periods: list = [288, 338, 576, 676],
