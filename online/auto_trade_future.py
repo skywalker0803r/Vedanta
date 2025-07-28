@@ -77,20 +77,24 @@ def close_all_positions(client, symbol):
     except Exception as e:
         print(f"❌ 關閉所有持倉失敗: {e}")
 
-def auto_trade_futures(symbol="ETH/USDT", interval="1m", usdt_per_order=50, leverage=5, strategy=None, max_retries=3,run_once=True):
+def auto_trade_futures(symbol="ETH/USDT", interval="1h", usdt_per_order=500, leverage=5, strategy=None, max_retries=3,run_once=True):
 
+    # 設定用戶端
     client = create_binance_futures_client()
     set_leverage(client, symbol, leverage)
 
+    # 設置下單量
     min_amount, step_size = get_order_precision(client, symbol)
     print(f"✅ 最小下單量: {min_amount}, 數量精度: {step_size}")
 
+    # 計算間格秒數
     interval_sec = {
         "1m": 60, "3m": 180, "5m": 300, "15m": 900,
         "30m": 1800, "1h": 3600, "2h": 7200,
         "4h": 14400, "1d": 86400
     }.get(interval, 60)
 
+    # 跑一次的程序
     def process_once():
         try:
             now = datetime.utcnow()
@@ -107,6 +111,7 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1m", usdt_per_order=50, leve
             order_amt = (usdt_per_order * leverage) / close_price
             order_amt = max(order_amt, min_amount)
             order_amt = round_step_size(order_amt, step_size)
+            print(f"order_amt:{order_amt}")
 
             # 平倉判斷
             if position_side == 'long' and signal == -1:
@@ -178,9 +183,10 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1m", usdt_per_order=50, leve
         except Exception as e:
             print(f"❌ 執行錯誤: {e}")
     
-    # ✅ 如果是單次執行模式
+    # 如果是單次執行模式
     if run_once:
         process_once()
+    # 否則重複執行
     else:
         while True:
             process_once()
