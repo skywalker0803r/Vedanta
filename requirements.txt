@@ -9,3 +9,5 @@ google-auth
 google-api-python-client 
 google-cloud-core
 google-generativeai
+python-binance 
+ta 
