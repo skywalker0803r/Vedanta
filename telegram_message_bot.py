@@ -13,6 +13,7 @@ client = Client(api_key='', api_secret='')
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+# 負責將分析結果推送到你的 Telegram。
 def send_telegram_message(message):
     apiURL = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage'
     try:
@@ -25,6 +26,8 @@ def send_telegram_message(message):
     except Exception as e:
         print(e)
 
+
+#取得成交量最高的 USDT 交易對，過濾掉 BULL/BEAR 等槓桿代幣。
 def get_top_symbols(limit=100, quote_asset='USDT'):
     tickers = client.get_ticker()
     usdt_pairs = [
@@ -35,6 +38,7 @@ def get_top_symbols(limit=100, quote_asset='USDT'):
     sorted_pairs = sorted(usdt_pairs, key=lambda x: float(x['quoteVolume']), reverse=True)
     return [t['symbol'] for t in sorted_pairs[:limit]]
 
+#用來拉取 K 線數據，轉成 Pandas DataFrame 並處理型別轉換。
 def fetch_klines(symbol, interval, limit=200):
     try:
         klines = client.get_klines(symbol=symbol, interval=interval, limit=limit)
@@ -52,7 +56,7 @@ def fetch_klines(symbol, interval, limit=200):
     except:
         return None
 
-
+#使用的是 Vegas 策略，透過 ema144 和 ema169 構成的範圍作為過濾依據。
 def check_vegas_conditions(df):
     df['ema144'] = df['close'].ewm(span=144, adjust=False).mean()
     df['ema169'] = df['close'].ewm(span=169, adjust=False).mean()
@@ -79,7 +83,7 @@ def check_vegas_conditions(df):
         return True, "回踩反彈"
     return False, ""
 
-
+#使用的是 Vegas 策略，透過 ema144 和 ema169 構成的範圍作為過濾依據。
 def check_vegas_short_conditions(df):
     df['ema144'] = df['close'].ewm(span=144, adjust=False).mean()
     df['ema169'] = df['close'].ewm(span=169, adjust=False).mean()
@@ -107,7 +111,7 @@ def check_vegas_short_conditions(df):
     return False, ""
 
 
-
+#對每個幣種進行分析，回傳是否符合多單或空單條件與原因。
 def analyze_symbol(symbol):
     result = {
         'symbol': symbol,
@@ -117,11 +121,11 @@ def analyze_symbol(symbol):
         'short_reason': ""
     }
 
-    df_15m = fetch_klines(symbol, Client.KLINE_INTERVAL_15MINUTE)
+    df_1h = fetch_klines(symbol, Client.KLINE_INTERVAL_1HOUR)  # 修改為1小時
 
-    if df_15m is not None:
-        long_pass, long_reason = check_vegas_conditions(df_15m)
-        short_pass, short_reason = check_vegas_short_conditions(df_15m)
+    if df_1h is not None:
+        long_pass, long_reason = check_vegas_conditions(df_1h)
+        short_pass, short_reason = check_vegas_short_conditions(df_1h)
 
         if long_pass:
             result['long'] = True
@@ -133,8 +137,7 @@ def analyze_symbol(symbol):
 
     return result
 
-
-
+#驅動整個流程，循環處理每個幣種、分析、通知。
 def main():
     long_symbols = []
     short_symbols = []
