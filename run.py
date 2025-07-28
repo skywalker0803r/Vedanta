@@ -1,5 +1,7 @@
-from online.auto_trade_future import auto_trade_futures
-from Technicalindicatorstrategy import vegas
+import subprocess
 
-auto_trade_futures(symbol="ETH/USDT",interval="1h",usdt_per_order=500,leverage=5,strategy=vegas)
+# 執行 telegram_message_bot.py
+subprocess.run(["python", "telegram_message_bot.py"])
 
+# 執行 vegas_run.py
+subprocess.run(["python", "vegas_run.py"])
