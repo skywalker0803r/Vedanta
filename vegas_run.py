@@ -12,4 +12,3 @@ auto_trade_futures(
     max_hold_bars=1000,
     run_once=True
 )
-

@@ -10,9 +10,11 @@ def backtest_signals(df: pd.DataFrame,
                      take_profit=None,
                      max_hold_bars=None,
                      slippage_rate=0.0005,
-                     execution_price_type='open'):
+                     execution_price_type='open',
+                     capital_ratio=1):
     """
     補強版策略回測函式，含滑點、停損停利、持倉限制與最後平倉邏輯。
+    新增參數capital_ratio，控制每次下單使用的資金佔比，預設為1。
     """
 
     required_cols = ['open', 'high', 'low', 'close', 'signal', 'timestamp']
@@ -20,10 +22,13 @@ def backtest_signals(df: pd.DataFrame,
         raise ValueError(f"df 必須包含欄位: {required_cols}")
     if initial_capital <= 0:
         raise ValueError("initial_capital 必須大於 0")
+    if not (0 < capital_ratio <= 1):
+        raise ValueError("capital_ratio 必須介於 0 與 1 之間")
 
     df = df.copy().reset_index(drop=True)
-    df['position'] = np.where(df['signal'] == 1, leverage,
-                       np.where(df['signal'] == -1, -leverage if allow_short else 0, np.nan))
+    # 使用 leverage * capital_ratio 作為實際部位大小
+    df['position'] = np.where(df['signal'] == 1, leverage * capital_ratio,
+                       np.where(df['signal'] == -1, -leverage * capital_ratio if allow_short else 0, np.nan))
     df['position'] = df['position'].ffill().fillna(0)
     df.loc[0, 'position'] = 0
 
@@ -90,10 +95,10 @@ def backtest_signals(df: pd.DataFrame,
             if should_exit:
                 if entry_position > 0:
                     exit_price *= (1 - fee_rate) * sell_slip
-                    rtn = (exit_price / entry_price - 1) * leverage
+                    rtn = (exit_price / entry_price - 1) * leverage * capital_ratio
                 else:
                     exit_price *= (1 + fee_rate) * buy_slip
-                    rtn = (entry_price / exit_price - 1) * leverage
+                    rtn = (entry_price / exit_price - 1) * leverage * capital_ratio
 
                 trade_returns.append(rtn)
                 hold_bars.append(holding_period)
@@ -141,10 +146,10 @@ def backtest_signals(df: pd.DataFrame,
         final_price = last['close']
         if entry_position > 0:
             final_price *= (1 - fee_rate) * (1 - np.random.uniform(0, slippage_rate))
-            rtn = (final_price / entry_price - 1) * leverage
+            rtn = (final_price / entry_price - 1) * leverage * capital_ratio
         else:
             final_price *= (1 + fee_rate) * (1 + np.random.uniform(0, slippage_rate))
-            rtn = (entry_price / final_price - 1) * leverage
+            rtn = (entry_price / final_price - 1) * leverage * capital_ratio
 
         trade_returns.append(rtn)
         hold_bars.append(len(df) - entry_index)
