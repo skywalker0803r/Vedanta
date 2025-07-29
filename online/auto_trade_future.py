@@ -4,7 +4,6 @@ import time
 from datetime import datetime
 from dotenv import load_dotenv
 
-# 載入環境變數 (.env 需有 BINANCE_API_KEY_FUTURE, BINANCE_SECRET_FUTURE, BINANCE_TESTNET_MODE)
 load_dotenv()
 
 def create_binance_futures_client():
@@ -26,7 +25,6 @@ def set_leverage(client, symbol, leverage):
         print(f"✅ 槓桿設為 {leverage}x")
     except Exception as e:
         print(f"❌ 槓桿設定失敗: {e}")
-
 
 def get_position(client, symbol):
     try:
@@ -77,26 +75,34 @@ def close_all_positions(client, symbol):
     except Exception as e:
         print(f"❌ 關閉所有持倉失敗: {e}")
 
-def auto_trade_futures(symbol="ETH/USDT", interval="1h", usdt_per_order=500, leverage=5, strategy=None, max_retries=3,run_once=True):
+def cancel_all_open_orders(client, symbol):
+    try:
+        client.cancel_all_orders(symbol)
+        print(f"🧹 已取消 {symbol} 所有掛單")
+    except Exception as e:
+        print(f"⚠️ 取消掛單失敗: {e}")
 
-    # 設定用戶端
+def auto_trade_futures(symbol="ETH/USDT", interval="1h", usdt_per_order=500, leverage=5, strategy=None,
+                       max_retries=3, run_once=True, stop_loss=0.005, take_profit=0.05, max_hold_bars=1000):
+
+    trigger_price_buffer = 0.005  # 0.5%
+
     client = create_binance_futures_client()
     set_leverage(client, symbol, leverage)
-
-    # 設置下單量
     min_amount, step_size = get_order_precision(client, symbol)
     print(f"✅ 最小下單量: {min_amount}, 數量精度: {step_size}")
 
-    # 計算間格秒數
     interval_sec = {
         "1m": 60, "3m": 180, "5m": 300, "15m": 900,
         "30m": 1800, "1h": 3600, "2h": 7200,
         "4h": 14400, "1d": 86400
     }.get(interval, 60)
 
-    # 跑一次的程序
+    hold_info = {'entry_index': None, 'entry_price': None}
+
     def process_once():
         try:
+            print(f"📊 正在使用策略: {strategy.__class__.__name__}，交易標的: {symbol}")
             now = datetime.utcnow()
             df = strategy.get_signals(symbol.replace("/", ""), interval, now)
             latest = df.iloc[-1]
@@ -111,83 +117,114 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h", usdt_per_order=500, lev
             order_amt = (usdt_per_order * leverage) / close_price
             order_amt = max(order_amt, min_amount)
             order_amt = round_step_size(order_amt, step_size)
-            print(f"order_amt:{order_amt}")
 
-            # 平倉判斷
+            if position_side != 'none' and hold_info['entry_index'] is not None:
+                current_index = len(df) - 1
+                held_bars = current_index - hold_info['entry_index']
+                if held_bars >= max_hold_bars:
+                    print(f"⏰ 超過最大持有K棒數({held_bars}/{max_hold_bars})，平倉")
+                    close_all_positions(client, symbol)
+                    hold_info['entry_index'] = None
+                    hold_info['entry_price'] = None
+                    return
+
             if position_side == 'long' and signal == -1:
                 print("📉 平多單中...")
-                close_amt = round_step_size(position_amt, step_size)
-                if close_amt >= min_amount:
-                    for i in range(max_retries):
-                        try:
-                            pos_amt, pos_side = get_position(client, symbol)
-                            if pos_side != 'long' or pos_amt == 0:
-                                print("⚠️ 無多單可平，跳過")
-                                break
-                            client.create_order(symbol=symbol, type='market', side='sell', amount=close_amt, params={"reduceOnly": True})
-                            print(f"✅ 平多單成功: {close_amt}")
-                            time.sleep(1)
-                            break
-                        except Exception as e:
-                            print(f"❌ 平多單失敗 (嘗試 {i+1}/{max_retries}): {e}")
-                            time.sleep(2)
-                    else:
-                        print("⛔ 平多單達最大重試，嘗試關閉持倉")
-                        close_all_positions(client, symbol)
+                close_all_positions(client, symbol)
+                hold_info['entry_index'] = None
+                hold_info['entry_price'] = None
 
             elif position_side == 'short' and signal == 1:
                 print("📈 平空單中...")
-                close_amt = round_step_size(position_amt, step_size)
-                if close_amt >= min_amount:
-                    for i in range(max_retries):
-                        try:
-                            pos_amt, pos_side = get_position(client, symbol)
-                            if pos_side != 'short' or pos_amt == 0:
-                                print("⚠️ 無空單可平，跳過")
-                                break
-                            client.create_order(symbol=symbol, type='market', side='buy', amount=close_amt, params={"reduceOnly": True})
-                            print(f"✅ 平空單成功: {close_amt}")
-                            time.sleep(1)
-                            break
-                        except Exception as e:
-                            print(f"❌ 平空單失敗 (嘗試 {i+1}/{max_retries}): {e}")
-                            time.sleep(2)
-                    else:
-                        print("⛔ 平空單達最大重試，嘗試關閉持倉")
-                        close_all_positions(client, symbol)
+                close_all_positions(client, symbol)
+                hold_info['entry_index'] = None
+                hold_info['entry_price'] = None
 
-            # 更新倉位狀態
             time.sleep(1)
             position_amt, position_side = get_position(client, symbol)
 
-            # 開倉判斷
+            ticker = client.fetch_ticker(symbol)
+            last_price = ticker['last']
+            min_diff_ratio = 0.005  # 0.5% 安全距離
+
             if signal == 1 and position_side == 'none':
                 print(f"✅ 開多單 {order_amt}")
                 try:
+                    cancel_all_open_orders(client, symbol)
                     client.create_order(symbol=symbol, type='market', side='buy', amount=order_amt)
-                    print(f"✅ 開多單成功: {order_amt}")
-                    time.sleep(1)
+                    entry_price = close_price
+                    hold_info['entry_price'] = entry_price
+                    hold_info['entry_index'] = len(df) - 1
+
+                    sl = entry_price * (1 - stop_loss)
+                    tp = entry_price * (1 + take_profit)
+                    trigger_sl = sl
+                    trigger_tp = tp
+
+                    if trigger_tp <= last_price or abs(trigger_tp - last_price) / last_price < min_diff_ratio:
+                        trigger_tp = last_price * (1 + min_diff_ratio)
+                    if trigger_sl >= last_price or abs(trigger_sl - last_price) / last_price < min_diff_ratio:
+                        trigger_sl = last_price * (1 - min_diff_ratio)
+
+                    trigger_sl = round(trigger_sl, 2)
+                    trigger_tp = round(trigger_tp, 2)
+
+                    retries = 0
+                    while retries < max_retries:
+                        try:
+                            client.create_order(symbol=symbol, type='stop_market', side='sell', amount=order_amt,
+                                                params={"stopPrice": trigger_sl, "reduceOnly": True, "priceProtect": True})
+                            client.create_order(symbol=symbol, type='take_profit_market', side='sell', amount=order_amt,
+                                                params={"stopPrice": trigger_tp, "reduceOnly": True, "priceProtect": True})
+                            print(f"✅ 多單建立完成，止損: {trigger_sl}, 止盈: {trigger_tp}")
+                            break
+                        except Exception as e:
+                            print(f"⚠️ 掛單失敗，嘗試第 {retries + 1} 次: {e}")
+                            retries += 1
+                            time.sleep(1)
+                    if retries >= max_retries:
+                        print("❌ 多單掛單最終失敗，建議檢查市價與觸發價距離")
                 except Exception as e:
                     print(f"❌ 開多單失敗: {e}")
+
             elif signal == -1 and position_side == 'none':
                 print(f"✅ 開空單 {order_amt}")
                 try:
+                    cancel_all_open_orders(client, symbol)
                     client.create_order(symbol=symbol, type='market', side='sell', amount=order_amt)
-                    print(f"✅ 開空單成功: {order_amt}")
-                    time.sleep(1)
+                    entry_price = close_price
+                    hold_info['entry_price'] = entry_price
+                    hold_info['entry_index'] = len(df) - 1
+
+                    sl = entry_price * (1 + stop_loss)
+                    tp = entry_price * (1 - take_profit)
+                    trigger_sl = sl
+                    trigger_tp = tp
+
+                    if trigger_sl <= last_price or abs(trigger_sl - last_price) / last_price < min_diff_ratio:
+                        trigger_sl = last_price * (1 + min_diff_ratio)
+                    if trigger_tp >= last_price or abs(trigger_tp - last_price) / last_price < min_diff_ratio:
+                        trigger_tp = last_price * (1 - min_diff_ratio)
+
+                    trigger_sl = round(trigger_sl, 2)
+                    trigger_tp = round(trigger_tp, 2)
+
+                    client.create_order(symbol=symbol, type='stop_market', side='buy', amount=order_amt,
+                                        params={"stopPrice": trigger_sl, "reduceOnly": True, "priceProtect": True})
+                    client.create_order(symbol=symbol, type='take_profit_market', side='buy', amount=order_amt,
+                                        params={"stopPrice": trigger_tp, "reduceOnly": True, "priceProtect": True})
+                    print(f"✅ 空單建立完成，止損: {trigger_sl}, 止盈: {trigger_tp}")
                 except Exception as e:
                     print(f"❌ 開空單失敗: {e}")
             else:
-                print("⏸ 訊號未變或已有倉位，無操作")
+                print("⏸ 無開倉條件或已有持倉")
 
         except Exception as e:
             print(f"❌ 執行錯誤: {e}")
-    
-    # 如果是單次執行模式
+
     if run_once:
         process_once()
-    # 否則重複執行
     else:
         while True:
             process_once()
-            time.sleep(interval_sec)
+            time.sleep(interval_sec)                       
