@@ -90,16 +90,32 @@ def backtest_signals(df: pd.DataFrame,
     win_rate = np.mean([r > 0 for r in trade_returns]) if num_trades else 0
     avg_profit = np.mean(trade_returns) if num_trades else 0
 
+    # 新增：平均獲利時報酬、平均虧損時報酬、最大單筆報酬、最大單筆虧損
+    if num_trades > 0:
+        profits = [r for r in trade_returns if r > 0]
+        losses = [r for r in trade_returns if r <= 0]
+        avg_profit_win = np.mean(profits) if profits else 0
+        avg_loss_loss = np.mean(losses) if losses else 0
+        max_profit = np.max(trade_returns)
+        max_loss = np.min(trade_returns)
+    else:
+        avg_profit_win = avg_loss_loss = max_profit = max_loss = 0
+
     return {
         "metric": {
-            "總報酬率": round(total_return * 100, 2),
-            "年化報酬率": round(annual_return * 100, 2) if annual_return is not None else "期間過短，不適用",
-            "日報酬率": round(daily_return * 100, 4),
-            "最大回撤": round(max_drawdown * 100, 2),
-            "交易次數": num_trades,
-            "勝率": round(win_rate * 100, 2),
-            "平均持有K棒數": round(np.mean(hold_bars), 2) if hold_bars else 0,
-            "平均每筆報酬率": round(avg_profit * 100, 2),
+            "回測K棒數量": int(len(df)),  # 新增回測K棒數量
+            "總報酬率": f"{total_return * 100:.2f}",
+            "年化報酬率": f"{annual_return * 100:.2f}" if annual_return is not None else "期間過短，不適用",
+            "日報酬率": f"{daily_return * 100:.4f}",
+            "最大回撤": f"{max_drawdown * 100:.2f}",
+            "交易次數": int(num_trades),
+            "勝率": f"{win_rate * 100:.2f}",
+            "平均持有K棒數": f"{np.mean(hold_bars):.2f}" if hold_bars else "0",
+            "平均每筆報酬率": f"{avg_profit * 100:.2f}",
+            "平均獲利時報酬": f"{avg_profit_win * 100:.2f}",
+            "平均虧損時報酬": f"{avg_loss_loss * 100:.2f}",
+            "最大單筆報酬": f"{max_profit * 100:.2f}",
+            "最大單筆虧損": f"{max_loss * 100:.2f}",
         },
         "fig": {
             "timestamp": df["timestamp"].values,
