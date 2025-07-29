@@ -64,7 +64,7 @@ def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limi
     return df[["timestamp", "open", "high", "low", "close"]]
 
 
-def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 3000) -> pd.DataFrame:
+def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 200) -> pd.DataFrame:
     df = get_binance_kline(symbol, interval, end_time, limit)
     
     # 計算 EMA
@@ -135,5 +135,5 @@ if __name__ == "__main__":
     symbol = "BTCUSDT"
     interval = "1h"
     end_time = datetime.utcnow()
-    df_signals = get_signals(symbol, interval, end_time, limit=500)
+    df_signals = get_signals(symbol, interval, end_time, limit=200)
     print(df_signals.tail(10))
