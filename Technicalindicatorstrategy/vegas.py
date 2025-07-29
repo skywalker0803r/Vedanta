@@ -40,85 +40,100 @@ def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limi
         data = response.json()
 
         if not data:
+            print("No more data returned from API.")
             break
 
         all_data = data + all_data  # 按時間順序前置
-        end_timestamp = data[0][0] - 1
+        end_timestamp = data[0][0] - 1  # 下一輪抓更舊的資料
         remaining -= len(data)
+
+    if not all_data:
+        raise ValueError("Failed to fetch any K-line data.")
 
     df = pd.DataFrame(all_data, columns=[
         "timestamp", "open", "high", "low", "close", "volume",
         "close_time", "quote_asset_volume", "number_of_trades",
         "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore"
     ])
+
     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
     df[["open", "high", "low", "close"]] = df[["open", "high", "low", "close"]].astype(float)
 
-    df = df.sort_values("timestamp").reset_index(drop=True)  # 確保時間排序
+    df = df.drop_duplicates(subset="timestamp").sort_values("timestamp").reset_index(drop=True)
 
     return df[["timestamp", "open", "high", "low", "close"]]
 
-# 產生訊號
+
 def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 3000) -> pd.DataFrame:
     df = get_binance_kline(symbol, interval, end_time, limit)
     
-    # 先算好所有 EMA
+    # 計算 EMA
     df['ema12'] = df['close'].ewm(span=12, adjust=False).mean()
     df['ema144'] = df['close'].ewm(span=144, adjust=False).mean()
     df['ema169'] = df['close'].ewm(span=169, adjust=False).mean()
-    
-    # 初始化信號欄位
+
+    # 初始化訊號欄位
     df["signal"] = 0
     df["long_type"] = ""
     df["short_type"] = ""
 
-    # 從第二根 K 線開始判斷（因為需要前一根資料）
     for i in range(1, len(df)):
-        prev = df.iloc[i-1]
+        prev = df.iloc[i - 1]
         curr = df.iloc[i]
 
         vegas_low = min(curr['ema144'], curr['ema169'])
         vegas_high = max(curr['ema144'], curr['ema169'])
 
-        # 多頭條件判斷
-        breakout = (
+        # 多頭條件
+        is_breakout = (
             prev['close'] < vegas_low and
             curr['close'] > vegas_high and
             curr['ema12'] > vegas_high
         )
 
-        bounce = (
+        is_bounce = (
             prev['close'] > vegas_high and
             curr['close'] > vegas_high and
             min(curr['low'], prev['low']) <= vegas_high and
             curr['ema12'] > vegas_high
         )
 
-        # 空頭條件判斷
-        breakdown = (
+        # 空頭條件
+        is_breakdown = (
             prev['close'] > vegas_high and
             curr['close'] < vegas_low and
             curr['ema12'] < vegas_low
         )
 
-        fail_bounce = (
+        is_failed_bounce = (
             prev['close'] < vegas_low and
             curr['close'] < vegas_low and
             max(curr['high'], prev['high']) >= vegas_low and
             curr['ema12'] < vegas_low
         )
 
-        if breakout:
+        if is_breakout:
             df.at[i, "signal"] = 1
             df.at[i, "long_type"] = "突破"
-        elif bounce:
+        elif is_bounce:
             df.at[i, "signal"] = 1
             df.at[i, "long_type"] = "回踩反彈"
-        elif breakdown:
+        elif is_breakdown:
             df.at[i, "signal"] = -1
             df.at[i, "short_type"] = "跌破"
-        elif fail_bounce:
+        elif is_failed_bounce:
             df.at[i, "signal"] = -1
             df.at[i, "short_type"] = "反彈失敗"
-    
-    return df
+
+    return df[[
+        "timestamp", "open", "high", "low", "close",
+        "ema12", "ema144", "ema169", "signal", "long_type", "short_type"
+    ]]
+
+# 測試範例
+if __name__ == "__main__":
+    symbol = "BTCUSDT"
+    interval = "1h"
+    end_time = datetime.utcnow()
+    df_signals = get_signals(symbol, interval, end_time, limit=500)
+    print(df_signals.tail(10))
