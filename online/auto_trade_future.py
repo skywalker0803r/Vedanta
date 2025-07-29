@@ -59,7 +59,9 @@ def get_order_precision(client, symbol):
         return 0.01, 0.001
 
 def round_step_size(amount, step_size):
-    return round(round(amount / step_size) * step_size, 8)
+    # 向下取整數量，避免超出交易所限制
+    import math
+    return math.floor(amount / step_size) * step_size
 
 def close_all_positions(client, symbol):
     try:
@@ -82,8 +84,12 @@ def cancel_all_open_orders(client, symbol):
     except Exception as e:
         print(f"⚠️ 取消掛單失敗: {e}")
 
-def auto_trade_futures(symbol="ETH/USDT", interval="1h", usdt_per_order=500, leverage=5, strategy=None,
-                       max_retries=3, run_once=True, stop_loss=0.005, take_profit=0.05, max_hold_bars=1000):
+def auto_trade_futures(symbol="ETH/USDT", interval="1h",
+                       usdt_percent_per_order=0.1,  # 每次用餘額的百分比（0.1=10%）
+                       leverage=5, strategy=None,
+                       max_retries=3, run_once=True,
+                       stop_loss=0.005, take_profit=0.05,
+                       max_hold_bars=1000):
 
     trigger_price_buffer = 0.005  # 0.5%
 
@@ -114,10 +120,13 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h", usdt_per_order=500, lev
             usdt_balance = get_usdt_balance(client)
             print(f"目前持倉: {position_amt:.6f} ({position_side}), USDT 餘額: {usdt_balance:.2f}")
 
+            # 根據百分比計算每次開倉的USDT金額
+            usdt_per_order = usdt_balance * usdt_percent_per_order
+
             order_amt = (usdt_per_order * leverage) / close_price
             order_amt = max(order_amt, min_amount)
             order_amt = round_step_size(order_amt, step_size)
-
+            
             if position_side != 'none' and hold_info['entry_index'] is not None:
                 current_index = len(df) - 1
                 held_bars = current_index - hold_info['entry_index']
@@ -166,6 +175,7 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h", usdt_per_order=500, lev
                     if trigger_sl >= last_price or abs(trigger_sl - last_price) / last_price < min_diff_ratio:
                         trigger_sl = last_price * (1 - min_diff_ratio)
 
+                    # 取得價格精度，這邊以2位小數為例，實務可改為動態取得
                     trigger_sl = round(trigger_sl, 2)
                     trigger_tp = round(trigger_tp, 2)
 
@@ -227,4 +237,4 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h", usdt_per_order=500, lev
     else:
         while True:
             process_once()
-            time.sleep(interval_sec)                       
+            time.sleep(interval_sec)
