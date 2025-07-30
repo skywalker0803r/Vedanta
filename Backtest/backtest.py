@@ -11,9 +11,11 @@ def backtest_signals(df: pd.DataFrame,
                             max_hold_bars=None,
                             slippage_rate=0.0005,
                             execution_price_type='open',
-                            capital_ratio=1):
+                            capital_ratio=1,
+                            maintenance_margin_ratio=0.005,
+                            liquidation_penalty=1.0):
     """
-    修正版本：以動態資產追蹤方式回測，避免報酬高估。
+    加入資金風控（維持保證金 + 強平）版本。
     """
     required_cols = ['open', 'high', 'low', 'close', 'signal', 'timestamp']
     if not all(col in df.columns for col in required_cols):
@@ -56,6 +58,7 @@ def backtest_signals(df: pd.DataFrame,
         if entry_position != 0:
             holding_period = i - entry_index
 
+            # 檢查止盈止損
             if entry_position > 0:
                 if stop_loss is not None and low <= entry_price * (1 - stop_loss):
                     should_exit = True
@@ -86,6 +89,9 @@ def backtest_signals(df: pd.DataFrame,
                 exit_price = close
 
             if should_exit:
+                capital_used = current_equity * capital_ratio
+                maintenance_margin = capital_used * maintenance_margin_ratio
+
                 if entry_position > 0:
                     exit_price *= (1 - fee_rate) * sell_slip
                     rtn = (exit_price / entry_price - 1) * leverage
@@ -93,9 +99,16 @@ def backtest_signals(df: pd.DataFrame,
                     exit_price *= (1 + fee_rate) * buy_slip
                     rtn = (entry_price / exit_price - 1) * leverage
 
-                capital_used = current_equity * capital_ratio
                 profit = capital_used * rtn
-                current_equity += profit
+
+                # 檢查是否會被強平
+                if current_equity + profit < maintenance_margin:
+                    loss = capital_used * liquidation_penalty
+                    current_equity -= loss
+                    rtn = -liquidation_penalty
+                    exit_reason = 'Liquidated'
+                else:
+                    current_equity += profit
 
                 trade_returns.append(rtn)
                 hold_bars.append(holding_period)
@@ -122,7 +135,7 @@ def backtest_signals(df: pd.DataFrame,
 
         equity_curve.append(current_equity)
 
-    # 強制平倉
+    # 強制平倉（最後一根K棒）
     if entry_position != 0:
         final_price = df.iloc[-1]['close']
         if entry_position > 0:
@@ -132,11 +145,21 @@ def backtest_signals(df: pd.DataFrame,
             final_price *= (1 + fee_rate) * (1 + np.random.uniform(0, slippage_rate))
             rtn = (entry_price / final_price - 1) * leverage
 
-        profit = current_equity * capital_ratio * rtn
-        current_equity += profit
+        capital_used = current_equity * capital_ratio
+        maintenance_margin = capital_used * maintenance_margin_ratio
+        profit = capital_used * rtn
+
+        if current_equity + profit < maintenance_margin:
+            loss = capital_used * liquidation_penalty
+            current_equity -= loss
+            rtn = -liquidation_penalty
+            exit_reason = 'Final Liquidated'
+        else:
+            current_equity += profit
+            exit_reason = 'Final Force Exit'
+
         trade_returns.append(rtn)
         hold_bars.append(len(df) - entry_index)
-
         trades_log.append({
             'entry_time': df.iloc[entry_index]['timestamp'],
             'exit_time': df.iloc[-1]['timestamp'],
@@ -145,7 +168,7 @@ def backtest_signals(df: pd.DataFrame,
             'exit_price': final_price,
             'bars_held': len(df) - entry_index,
             'return': rtn,
-            'reason': 'Final Force Exit',
+            'reason': exit_reason,
         })
 
         equity_curve[-1] = current_equity
@@ -157,8 +180,12 @@ def backtest_signals(df: pd.DataFrame,
 
     total_return = df['equity'].iloc[-1] / initial_capital - 1
     max_dd = df['drawdown'].min()
+
     time_days = (df['timestamp'].iloc[-1] - df['timestamp'].iloc[0]).total_seconds() / 86400
-    daily_return = (1 + total_return) ** (1 / time_days) - 1 if time_days > 0 else 0
+    if time_days <= 0:
+        time_days = len(df) / 24  # 預設1小時K棒
+
+    daily_return = (df['equity'].iloc[-1] / initial_capital) ** (1 / time_days) - 1
 
     wins = [r for r in trade_returns if r > 0]
     losses = [r for r in trade_returns if r <= 0]
