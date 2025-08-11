@@ -3,7 +3,7 @@ import pandas as pd
 import time
 import requests
 import os
-from Technicalindicatorstrategy import vegas
+from Technicalindicatorstrategy import turtle_strategy
 from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
@@ -49,7 +49,7 @@ def main():
     for symbol in top_symbols:
         print(f"分析 {symbol}...")
         try:
-            result = vegas.get_signals(symbol=symbol, interval='1h', end_time=datetime.now(), limit = 1000).tail(1)
+            result = turtle_strategy.get_signals(symbol=symbol, interval='15m', end_time=datetime.now(), limit = 1000).tail(1)
             if result["signal"].values[0] == 1:
                 print(f"{symbol} 多單訊號 - {result['long_type'].values[0]}")
                 long_symbols.append(f"{symbol} ({result['long_type'].values[0]})")
@@ -63,11 +63,11 @@ def main():
     # 整理訊息後發送
     message = ""
     if long_symbols:
-        message += "📈 *符合 Vegas 多單條件的幣種:*\n" + "\n".join(long_symbols) + "\n\n"
+        message += "📈 *符合 海龜 多單條件的幣種:*\n" + "\n".join(long_symbols) + "\n\n"
     if short_symbols:
-        message += "📉 *符合 Vegas 空單條件的幣種:*\n" + "\n".join(short_symbols)
+        message += "📉 *符合 海龜 空單條件的幣種:*\n" + "\n".join(short_symbols)
     if not message:
-        message = "❌ 目前無幣種符合 Vegas 多單或空單條件"
+        message = "❌ 目前無幣種符合 海龜 多單或空單條件"
     send_telegram_message(message)
 
 # 主程序

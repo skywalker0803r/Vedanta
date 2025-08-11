@@ -4,4 +4,4 @@ import subprocess
 subprocess.run(["python", "telegram_message_bot.py"])
 
 # 執行 vegas_run.py
-subprocess.run(["python", "vegas_run.py"])
+subprocess.run(["python", "turtle_strategy_run.py"])
