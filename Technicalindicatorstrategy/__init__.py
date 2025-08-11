@@ -18,3 +18,4 @@ from . import vegas_adx
 from . import stochastic_range_bound
 from . import superTrend
 from . import vegas_ema
+from . import turtle_strategy

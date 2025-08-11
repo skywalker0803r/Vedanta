@@ -123,7 +123,7 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h",
                        usdt_percent_per_order=0.1,  # 每次用餘額的百分比（0.1=10%）
                        leverage=5, strategy=None,
                        run_once=True,
-                       stop_loss=0.005, take_profit=0.05,
+                       stop_loss=None, take_profit=None,
                        max_hold_bars=1000):
 
     client = create_binance_futures_client()
@@ -191,13 +191,17 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h",
                 cancel_all_open_orders(client, symbol)
                 order = client.create_order(symbol=symbol, type='market', side='buy', amount=order_amt)
                 entry_price = float(order.get('average'))
-                trigger_sl = entry_price * (1 - stop_loss)
-                trigger_tp = entry_price * (1 + take_profit)
-                client.create_order(symbol=symbol, type='stop_market', side='sell', amount=order_amt,
-                                    params={"stopPrice": trigger_sl, "reduceOnly": True, "priceProtect": True})
-                client.create_order(symbol=symbol, type='take_profit_market', side='sell', amount=order_amt,
-                                    params={"stopPrice": trigger_tp, "reduceOnly": True, "priceProtect": True})
-                print(f"✅ 多單建立完成，入場價: {entry_price:.4f}，止損: {trigger_sl:.4f}，止盈: {trigger_tp:.4f}")
+
+                if stop_loss is not None and take_profit is not None:
+                    trigger_sl = entry_price * (1 - stop_loss)
+                    trigger_tp = entry_price * (1 + take_profit)
+                    client.create_order(symbol=symbol, type='stop_market', side='sell', amount=order_amt,
+                                        params={"stopPrice": trigger_sl, "reduceOnly": True, "priceProtect": True})
+                    client.create_order(symbol=symbol, type='take_profit_market', side='sell', amount=order_amt,
+                                        params={"stopPrice": trigger_tp, "reduceOnly": True, "priceProtect": True})
+                    print(f"✅ 多單建立完成，入場價: {entry_price:.4f}，止損: {trigger_sl:.4f}，止盈: {trigger_tp:.4f}")
+                else:
+                    print(f"✅ 多單建立完成（無止損止盈），入場價: {entry_price:.4f}")
 
             # 無持倉且訊號做空，開空單並設定止損止盈
             elif signal == -1 and position_side == 'none':
@@ -205,16 +209,17 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h",
                 cancel_all_open_orders(client, symbol)
                 order = client.create_order(symbol=symbol, type='market', side='sell', amount=order_amt)
                 entry_price = float(order.get('average'))
-                trigger_sl = entry_price * (1 + stop_loss)
-                trigger_tp = entry_price * (1 - take_profit)
-                client.create_order(symbol=symbol, type='stop_market', side='buy', amount=order_amt,
-                                    params={"stopPrice": trigger_sl, "reduceOnly": True, "priceProtect": True})
-                client.create_order(symbol=symbol, type='take_profit_market', side='buy', amount=order_amt,
-                                    params={"stopPrice": trigger_tp, "reduceOnly": True, "priceProtect": True})
-                print(f"✅ 空單建立完成，入場價: {entry_price:.4f}，止損: {trigger_sl:.4f}，止盈: {trigger_tp:.4f}")
 
-            else:
-                print("⏸ 無開倉條件或已有持倉，等待下一次信號")
+                if stop_loss is not None and take_profit is not None:
+                    trigger_sl = entry_price * (1 + stop_loss)
+                    trigger_tp = entry_price * (1 - take_profit)
+                    client.create_order(symbol=symbol, type='stop_market', side='buy', amount=order_amt,
+                                        params={"stopPrice": trigger_sl, "reduceOnly": True, "priceProtect": True})
+                    client.create_order(symbol=symbol, type='take_profit_market', side='buy', amount=order_amt,
+                                        params={"stopPrice": trigger_tp, "reduceOnly": True, "priceProtect": True})
+                    print(f"✅ 空單建立完成，入場價: {entry_price:.4f}，止損: {trigger_sl:.4f}，止盈: {trigger_tp:.4f}")
+                else:
+                    print(f"✅ 空單建立完成（無止損止盈），入場價: {entry_price:.4f}")
 
         except Exception as e:
             print(f"❌ 執行錯誤: {e}")
