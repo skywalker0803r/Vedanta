@@ -104,7 +104,7 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
                 signals.append(1)  # 空單平倉
             else:
                 signals.append(0)
-    
+    df['stop_loss'] = stop_loss
     df['signal'] = signals
     return df
 
