@@ -2,8 +2,10 @@ import pandas as pd
 import requests
 from datetime import datetime
 import numpy as np
+import time
 
 def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limit: int = 1000) -> pd.DataFrame:
+    time.sleep(1)
     base_url = "https://api.binance.com/api/v3/klines"
     all_data = []
     end_timestamp = int(end_time.timestamp() * 1000)

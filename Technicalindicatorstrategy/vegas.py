@@ -2,8 +2,10 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 import numpy as np
+import time
 
 def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limit: int = 3000) -> pd.DataFrame:
+    time.sleep(1)
     """
     從幣安 API 獲取 K 線數據。
 
