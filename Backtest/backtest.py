@@ -64,26 +64,38 @@ def backtest_signals(df: pd.DataFrame,
         # ===== 出場判斷 =====
         if entry_position != 0:
             holding_period = i - entry_index
+            high_price = row['high']
+            low_price = row['low']
 
-            # 止盈止損（用已結束的 K 棒判斷，下一根開盤平倉）
-            if entry_position > 0:  # 多單
-                if stop_loss is not None and row['low'] <= entry_price * (1 - stop_loss):
+            # 多單
+            if entry_position > 0:
+                sl_price = entry_price * (1 - stop_loss) if stop_loss is not None else None
+                tp_price = entry_price * (1 + take_profit) if take_profit is not None else None
+
+                if sl_price is not None and low_price <= sl_price:
                     should_exit = True
                     exit_reason = 'Stop Loss'
-                    exit_price = next_row['open'] * (1 - fee_rate) * sell_slip
-                elif take_profit is not None and row['high'] >= entry_price * (1 + take_profit):
+                    exit_price = sl_price * (1 - fee_rate) * sell_slip
+
+                elif tp_price is not None and high_price >= tp_price:
                     should_exit = True
                     exit_reason = 'Take Profit'
-                    exit_price = next_row['open'] * (1 - fee_rate) * sell_slip
-            else:  # 空單
-                if stop_loss is not None and row['high'] >= entry_price * (1 + stop_loss):
+                    exit_price = tp_price * (1 - fee_rate) * sell_slip
+
+            # 空單
+            else:
+                sl_price = entry_price * (1 + stop_loss) if stop_loss is not None else None
+                tp_price = entry_price * (1 - take_profit) if take_profit is not None else None
+
+                if sl_price is not None and high_price >= sl_price:
                     should_exit = True
                     exit_reason = 'Stop Loss'
-                    exit_price = next_row['open'] * (1 + fee_rate) * buy_slip
-                elif take_profit is not None and row['low'] <= entry_price * (1 - take_profit):
+                    exit_price = sl_price * (1 + fee_rate) * buy_slip
+
+                elif tp_price is not None and low_price <= tp_price:
                     should_exit = True
                     exit_reason = 'Take Profit'
-                    exit_price = next_row['open'] * (1 + fee_rate) * buy_slip
+                    exit_price = tp_price * (1 + fee_rate) * buy_slip
 
             # 最大持倉K棒數
             if max_hold_bars is not None and holding_period >= max_hold_bars:
