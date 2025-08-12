@@ -3,7 +3,7 @@ from Technicalindicatorstrategy import turtle_strategy
 
 auto_trade_futures(
     symbol="ETH/USDT",#幣種
-    interval="15m",#週期
+    interval="1h",#週期
     usdt_percent_per_order=1,# 每次使用的資金佔比
     leverage=1,#槓桿
     strategy=turtle_strategy,# 策略

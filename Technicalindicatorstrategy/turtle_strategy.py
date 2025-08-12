@@ -53,23 +53,29 @@ def calculate_atr(df, period=20):
 
 def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 1000):
     df = get_binance_kline(symbol, interval, end_time, limit)
+
+    # 計算高低點，並移位避免用到當根
     df['20_high'] = df['high'].rolling(window=20).max().shift(1)
-    df['20_low'] = df['low'].rolling(window=20).min().shift(1)
+    df['20_low']  = df['low'].rolling(window=20).min().shift(1)
     df['10_high'] = df['high'].rolling(window=10).max().shift(1)
-    df['10_low'] = df['low'].rolling(window=10).min().shift(1)
-    df['ATR'] = calculate_atr(df, 20)
-    
+    df['10_low']  = df['low'].rolling(window=10).min().shift(1)
+
+    # 計算 ATR，並移位避免看未來
+    df['ATR'] = calculate_atr(df, 20).shift(1)
+
     position = 0  # 0空倉, 1多單, -1空單
     entry_price = 0
     stop_loss = 0
-    
+
     signals = []
-    
+    stop_losses = []  # 用來存每根的停損值
+
     for i in range(len(df)):
         if i < 20:
             signals.append(0)
+            stop_losses.append(stop_loss)
             continue
-        
+
         close = df.loc[i, 'close']
         atr = df.loc[i, 'ATR']
         high_20 = df.loc[i, '20_high']
@@ -78,33 +84,38 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
         low_10 = df.loc[i, '10_low']
 
         if position == 0:
-            if close > high_20:
+            if close > high_20:  # 突破 20 日高
                 position = 1
                 entry_price = close
                 stop_loss = entry_price - 2 * atr
                 signals.append(1)  # 多單進場
-            elif close < low_20:
+            elif close < low_20:  # 跌破 20 日低
                 position = -1
                 entry_price = close
                 stop_loss = entry_price + 2 * atr
                 signals.append(-1)  # 空單進場
             else:
                 signals.append(0)
+
         elif position == 1:
-            # 多單出場條件：跌破10日低或跌破停損
+            # 多單出場條件：跌破 10 日低或停損
             if close < low_10 or close < stop_loss:
                 position = 0
                 signals.append(-1)  # 多單平倉
             else:
                 signals.append(0)
+
         elif position == -1:
-            # 空單出場條件：突破10日高或突破停損
+            # 空單出場條件：突破 10 日高或停損
             if close > high_10 or close > stop_loss:
                 position = 0
                 signals.append(1)  # 空單平倉
             else:
                 signals.append(0)
-    df['stop_loss'] = stop_loss
+
+        stop_losses.append(stop_loss)
+
+    df['stop_loss'] = stop_losses
     df['signal'] = signals
     return df
 

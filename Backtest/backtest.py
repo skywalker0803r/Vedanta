@@ -2,21 +2,19 @@ import numpy as np
 import pandas as pd
 
 def backtest_signals(df: pd.DataFrame,
-                            initial_capital=100,
-                            fee_rate=0.001,
-                            leverage=1,
-                            allow_short=True,
-                            stop_loss=None,
-                            take_profit=None,
-                            max_hold_bars=None,
-                            slippage_rate=0.0005,
-                            execution_price_type='open',
-                            capital_ratio=1,
-                            maintenance_margin_ratio=0.005,
-                            liquidation_penalty=1.0):
-    """
-    加入資金風控（維持保證金 + 強平）版本。
-    """
+                     initial_capital=100,
+                     fee_rate=0.001,
+                     leverage=1,
+                     allow_short=True,
+                     stop_loss=None,
+                     take_profit=None,
+                     max_hold_bars=None,
+                     slippage_rate=0.0005,
+                     capital_ratio=1,
+                     maintenance_margin_ratio=0.005,
+                     liquidation_penalty=1.0,
+                     delay_entry=True):  # 新增 delay_entry 參數
+
     required_cols = ['open', 'high', 'low', 'close', 'signal', 'timestamp']
     if not all(col in df.columns for col in required_cols):
         raise ValueError(f"df 必須包含欄位: {required_cols}")
@@ -24,28 +22,36 @@ def backtest_signals(df: pd.DataFrame,
         raise ValueError("capital_ratio 必須介於 0 與 1 之間")
 
     df = df.copy().reset_index(drop=True)
-    df['position'] = np.where(df['signal'] == 1, leverage,
-                       np.where(df['signal'] == -1, -leverage if allow_short else 0, np.nan))
+
+    # 確保 timestamp 為 datetime 格式
+    if not np.issubdtype(df['timestamp'].dtype, np.datetime64):
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+    # 根據 delay_entry 來決定是否延遲訊號
+    if delay_entry:
+        df['used_signal'] = df['signal'].shift(1).fillna(0)
+    else:
+        df['used_signal'] = df['signal'].fillna(0)
+
+    df['position'] = np.where(df['used_signal'] == 1, leverage,
+                       np.where(df['used_signal'] == -1, -leverage if allow_short else 0, np.nan))
     df['position'] = df['position'].ffill().fillna(0)
     df.loc[0, 'position'] = 0
 
-    equity = initial_capital
-    equity_curve = [equity]
-    trade_returns = []
-    hold_bars = []
-    trades_log = []
+    equity_curve = [initial_capital]
+    trade_returns, hold_bars, trades_log = [], [], []
 
     entry_price = None
     entry_index = None
     entry_position = 0
     current_equity = initial_capital
 
-    for i in range(1, len(df)):
+    for i in range(1, len(df) - 1):
         row = df.iloc[i]
-        prev_row = df.iloc[i - 1]
+        next_row = df.iloc[i + 1]
         target_position = row['position']
 
-        open_, high, low, close = row['open'], row['high'], row['low'], row['close']
+        open_, close = row['open'], row['close']
         slip_pct = np.random.uniform(0, slippage_rate)
         buy_slip = 1 + slip_pct
         sell_slip = 1 - slip_pct
@@ -55,53 +61,54 @@ def backtest_signals(df: pd.DataFrame,
         exit_price = None
         rtn = 0
 
+        # ===== 出場判斷 =====
         if entry_position != 0:
             holding_period = i - entry_index
 
-            # 檢查止盈止損
-            if entry_position > 0:
-                if stop_loss is not None and low <= entry_price * (1 - stop_loss):
+            # 止盈止損（用已結束的 K 棒判斷，下一根開盤平倉）
+            if entry_position > 0:  # 多單
+                if stop_loss is not None and row['low'] <= entry_price * (1 - stop_loss):
                     should_exit = True
                     exit_reason = 'Stop Loss'
-                    exit_price = entry_price * (1 - stop_loss)
-                elif take_profit is not None and high >= entry_price * (1 + take_profit):
+                    exit_price = next_row['open'] * (1 - fee_rate) * sell_slip
+                elif take_profit is not None and row['high'] >= entry_price * (1 + take_profit):
                     should_exit = True
                     exit_reason = 'Take Profit'
-                    exit_price = entry_price * (1 + take_profit)
-            else:
-                if stop_loss is not None and high >= entry_price * (1 + stop_loss):
+                    exit_price = next_row['open'] * (1 - fee_rate) * sell_slip
+            else:  # 空單
+                if stop_loss is not None and row['high'] >= entry_price * (1 + stop_loss):
                     should_exit = True
                     exit_reason = 'Stop Loss'
-                    exit_price = entry_price * (1 + stop_loss)
-                elif take_profit is not None and low <= entry_price * (1 - take_profit):
+                    exit_price = next_row['open'] * (1 + fee_rate) * buy_slip
+                elif take_profit is not None and row['low'] <= entry_price * (1 - take_profit):
                     should_exit = True
                     exit_reason = 'Take Profit'
-                    exit_price = entry_price * (1 - take_profit)
+                    exit_price = next_row['open'] * (1 + fee_rate) * buy_slip
 
+            # 最大持倉K棒數
             if max_hold_bars is not None and holding_period >= max_hold_bars:
                 should_exit = True
                 exit_reason = 'Max Hold Bars'
-                exit_price = close
+                exit_price = next_row['open'] * (1 - fee_rate if entry_position > 0 else 1 + fee_rate)
 
+            # 信號反轉
             if not should_exit and target_position != entry_position:
                 should_exit = True
                 exit_reason = 'Signal Change'
-                exit_price = close
+                exit_price = next_row['open'] * (1 - fee_rate if entry_position > 0 else 1 + fee_rate)
 
+            # 執行出場
             if should_exit:
                 capital_used = current_equity * capital_ratio
                 maintenance_margin = capital_used * maintenance_margin_ratio
 
                 if entry_position > 0:
-                    exit_price *= (1 - fee_rate) * sell_slip
                     rtn = (exit_price / entry_price - 1) * leverage
                 else:
-                    exit_price *= (1 + fee_rate) * buy_slip
                     rtn = (entry_price / exit_price - 1) * leverage
 
                 profit = capital_used * rtn
 
-                # 檢查是否會被強平
                 if current_equity + profit < maintenance_margin:
                     loss = capital_used * liquidation_penalty
                     current_equity -= loss
@@ -114,7 +121,7 @@ def backtest_signals(df: pd.DataFrame,
                 hold_bars.append(holding_period)
                 trades_log.append({
                     'entry_time': df.iloc[entry_index]['timestamp'],
-                    'exit_time': row['timestamp'],
+                    'exit_time': next_row['timestamp'],
                     'side': 'long' if entry_position > 0 else 'short',
                     'entry_price': entry_price,
                     'exit_price': exit_price,
@@ -127,17 +134,17 @@ def backtest_signals(df: pd.DataFrame,
                 entry_index = None
                 entry_position = 0
 
+        # ===== 進場判斷 =====
         if entry_position == 0 and target_position != 0:
-            entry_price_raw = open_ if execution_price_type == 'open' else close
-            entry_price = entry_price_raw * (1 + fee_rate) * buy_slip if target_position > 0 else entry_price_raw * (1 - fee_rate) * sell_slip
+            entry_price = open_ * (1 + fee_rate) * buy_slip if target_position > 0 else open_ * (1 - fee_rate) * sell_slip
             entry_index = i
             entry_position = target_position
 
         equity_curve.append(current_equity)
 
-    # 強制平倉（最後一根K棒）
+    # ===== 最後強制平倉 =====
     if entry_position != 0:
-        final_price = df.iloc[-1]['close']
+        final_price = df.iloc[-1]['open']
         if entry_position > 0:
             final_price *= (1 - fee_rate) * (1 - np.random.uniform(0, slippage_rate))
             rtn = (final_price / entry_price - 1) * leverage
@@ -173,20 +180,31 @@ def backtest_signals(df: pd.DataFrame,
 
         equity_curve[-1] = current_equity
 
-    equity_series = pd.Series(equity_curve, index=df.index)
-    df['equity'] = equity_series
+    # ===== 確保 equity_curve 長度與 df 一致 =====
+    if len(equity_curve) < len(df):
+        equity_curve += [equity_curve[-1]] * (len(df) - len(equity_curve))
+
+    df['equity'] = pd.Series(equity_curve, index=df.index[:len(equity_curve)])
     df['buy_and_hold'] = initial_capital * (1 + df['close'].pct_change().fillna(0)).cumprod()
     df['drawdown'] = df['equity'] / df['equity'].cummax() - 1
 
-    total_return = df['equity'].iloc[-1] / initial_capital - 1
-    max_dd = df['drawdown'].min()
+    # ===== 安全計算報酬率 =====
+    final_equity = df['equity'].iloc[-1]
+    if pd.isna(final_equity) or initial_capital <= 0:
+        total_return = 0
+    else:
+        total_return = final_equity / initial_capital - 1
 
     time_days = (df['timestamp'].iloc[-1] - df['timestamp'].iloc[0]).total_seconds() / 86400
     if time_days <= 0:
-        time_days = len(df) / 24  # 預設1小時K棒
+        time_days = max(1, len(df) / 24)
 
-    daily_return = (df['equity'].iloc[-1] / initial_capital) ** (1 / time_days) - 1
+    if pd.isna(final_equity) or initial_capital <= 0:
+        daily_return = 0
+    else:
+        daily_return = (final_equity / initial_capital) ** (1 / time_days) - 1
 
+    max_dd = df['drawdown'].min()
     wins = [r for r in trade_returns if r > 0]
     losses = [r for r in trade_returns if r <= 0]
 
