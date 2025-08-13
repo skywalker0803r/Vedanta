@@ -49,7 +49,7 @@ def main():
     for symbol in top_symbols:
         print(f"分析 {symbol}...")
         try:
-            result = vegas.get_signals(symbol=symbol, interval='1h', end_time=datetime.now(), limit = 1000).tail(1)
+            result = vegas.get_signals(symbol=symbol, interval='4h', end_time=datetime.now(), limit = 1000).tail(1)
             if result["signal"].values[0] == 1:
                 print(f"{symbol} 多單訊號 - {result['long_type'].values[0]}")
                 long_symbols.append(f"{symbol} ({result['long_type'].values[0]})")
