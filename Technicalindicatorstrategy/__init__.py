@@ -20,3 +20,4 @@ from . import superTrend
 from . import vegas_ema
 from . import turtle_strategy
 from . import WhaleSignal_WBTC
+from . import SmoothedMACDStrategy
