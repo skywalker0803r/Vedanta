@@ -2,18 +2,40 @@ import numpy as np
 import pandas as pd
 
 def backtest_signals(df: pd.DataFrame,
-                     initial_capital=100,
-                     fee_rate=0.001,
-                     leverage=1,
-                     allow_short=True,
-                     stop_loss=None,
-                     take_profit=None,
-                     max_hold_bars=None,
-                     slippage_rate=0.0005,
-                     capital_ratio=1,
-                     maintenance_margin_ratio=0.005,
-                     liquidation_penalty=1.0,
-                     delay_entry=True):  # 新增 delay_entry 參數
+                                initial_capital=100,
+                                fee_rate=0.001,
+                                leverage=1,
+                                allow_short=True,
+                                stop_loss=None,
+                                take_profit=None,
+                                max_hold_bars=None,
+                                slippage_rate=0.0005,
+                                capital_ratio=1,
+                                maintenance_margin_ratio=0.005,
+                                liquidation_penalty=1.0,
+                                delay_entry=True):
+    """
+    Simulates a trading strategy with a "worst-case" scenario for stop-loss and take-profit.
+    If both conditions are met within the same bar, the stop-loss is always triggered.
+    
+    Parameters:
+    - df (pd.DataFrame): DataFrame containing ['open', 'high', 'low', 'close', 'signal', 'timestamp'].
+    - initial_capital (float): Starting capital for the backtest.
+    - fee_rate (float): Transaction fee rate (e.g., 0.001 for 0.1%).
+    - leverage (float): Leverage multiple.
+    - allow_short (bool): Whether to allow short selling.
+    - stop_loss (float): Stop-loss percentage.
+    - take_profit (float): Take-profit percentage.
+    - max_hold_bars (int): Maximum number of bars to hold a position.
+    - slippage_rate (float): Slippage percentage.
+    - capital_ratio (float): Percentage of capital to use per trade.
+    - maintenance_margin_ratio (float): Margin call/liquidation ratio.
+    - liquidation_penalty (float): Penalty for liquidation (1.0 means losing all used capital).
+    - delay_entry (bool): If True, a signal triggers a trade on the next bar's open.
+    
+    Returns:
+    - dict: A dictionary containing performance metrics, figure data, and a trade log.
+    """
 
     required_cols = ['open', 'high', 'low', 'close', 'signal', 'timestamp']
     if not all(col in df.columns for col in required_cols):
@@ -23,18 +45,16 @@ def backtest_signals(df: pd.DataFrame,
 
     df = df.copy().reset_index(drop=True)
 
-    # 確保 timestamp 為 datetime 格式
     if not np.issubdtype(df['timestamp'].dtype, np.datetime64):
         df['timestamp'] = pd.to_datetime(df['timestamp'])
 
-    # 根據 delay_entry 來決定是否延遲訊號
     if delay_entry:
         df['used_signal'] = df['signal'].shift(1).fillna(0)
     else:
         df['used_signal'] = df['signal'].fillna(0)
 
     df['position'] = np.where(df['used_signal'] == 1, leverage,
-                       np.where(df['used_signal'] == -1, -leverage if allow_short else 0, np.nan))
+                              np.where(df['used_signal'] == -1, -leverage if allow_short else 0, np.nan))
     df['position'] = df['position'].ffill().fillna(0)
     df.loc[0, 'position'] = 0
 
@@ -51,7 +71,11 @@ def backtest_signals(df: pd.DataFrame,
         next_row = df.iloc[i + 1]
         target_position = row['position']
 
-        open_, close = row['open'], row['close']
+        open_ = row['open']
+        high_ = row['high']
+        low_ = row['low']
+        close_ = row['close']
+        
         slip_pct = np.random.uniform(0, slippage_rate)
         buy_slip = 1 + slip_pct
         sell_slip = 1 - slip_pct
@@ -61,62 +85,73 @@ def backtest_signals(df: pd.DataFrame,
         exit_price = None
         rtn = 0
 
-        # ===== 出場判斷 =====
+        # ===== 出場判斷 (如果目前有部位) =====
         if entry_position != 0:
             holding_period = i - entry_index
-            high_price = row['high']
-            low_price = row['low']
 
-            # 多單
-            if entry_position > 0:
-                sl_price = entry_price * (1 - stop_loss) if stop_loss is not None else None
-                tp_price = entry_price * (1 + take_profit) if take_profit is not None else None
+            # --- 計算止盈/止損價格 ---
+            sl_price_long = entry_price * (1 - stop_loss) if stop_loss is not None else None
+            tp_price_long = entry_price * (1 + take_profit) if take_profit is not None else None
+            sl_price_short = entry_price * (1 + stop_loss) if stop_loss is not None else None
+            tp_price_short = entry_price * (1 - take_profit) if take_profit is not None else None
+            
+            # --- 檢查觸發條件 ---
+            hit_sl = False
+            hit_tp = False
 
-                if sl_price is not None and low_price <= sl_price:
-                    should_exit = True
-                    exit_reason = 'Stop Loss'
-                    exit_price = sl_price * (1 - fee_rate) * sell_slip
-
-                elif tp_price is not None and high_price >= tp_price:
-                    should_exit = True
-                    exit_reason = 'Take Profit'
-                    exit_price = tp_price * (1 - fee_rate) * sell_slip
-
-            # 空單
-            else:
-                sl_price = entry_price * (1 + stop_loss) if stop_loss is not None else None
-                tp_price = entry_price * (1 - take_profit) if take_profit is not None else None
-
-                if sl_price is not None and high_price >= sl_price:
-                    should_exit = True
-                    exit_reason = 'Stop Loss'
-                    exit_price = sl_price * (1 + fee_rate) * buy_slip
-
-                elif tp_price is not None and low_price <= tp_price:
-                    should_exit = True
-                    exit_reason = 'Take Profit'
-                    exit_price = tp_price * (1 + fee_rate) * buy_slip
-
-            # 最大持倉K棒數
-            if max_hold_bars is not None and holding_period >= max_hold_bars:
+            if entry_position > 0: # 多單
+                if sl_price_long is not None and low_ <= sl_price_long:
+                    hit_sl = True
+                if tp_price_long is not None and high_ >= tp_price_long:
+                    hit_tp = True
+            else: # 空單
+                if sl_price_short is not None and high_ >= sl_price_short:
+                    hit_sl = True
+                if tp_price_short is not None and low_ <= tp_price_short:
+                    hit_tp = True
+            
+            # --- 決定出場價格 (最壞情況) ---
+            if hit_sl and hit_tp:
                 should_exit = True
-                exit_reason = 'Max Hold Bars'
-                exit_price = next_row['open'] * (1 - fee_rate if entry_position > 0 else 1 + fee_rate)
-
-            # 信號反轉
-            if not should_exit and target_position != entry_position:
+                exit_reason = 'Stop Loss (Worst Case)'
+                if entry_position > 0: # 多單
+                    exit_price = sl_price_long * (1 - fee_rate) * sell_slip
+                else: # 空單
+                    exit_price = sl_price_short * (1 + fee_rate) * buy_slip
+            elif hit_sl:
                 should_exit = True
-                exit_reason = 'Signal Change'
-                exit_price = next_row['open'] * (1 - fee_rate if entry_position > 0 else 1 + fee_rate)
+                exit_reason = 'Stop Loss'
+                if entry_position > 0: # 多單
+                    exit_price = sl_price_long * (1 - fee_rate) * sell_slip
+                else: # 空單
+                    exit_price = sl_price_short * (1 + fee_rate) * buy_slip
+            elif hit_tp:
+                should_exit = True
+                exit_reason = 'Take Profit'
+                if entry_position > 0: # 多單
+                    exit_price = tp_price_long * (1 - fee_rate) * sell_slip
+                else: # 空單
+                    exit_price = tp_price_short * (1 + fee_rate) * buy_slip
 
-            # 執行出場
+            # --- 檢查其他出場條件 ---
+            if not should_exit:
+                if max_hold_bars is not None and holding_period >= max_hold_bars:
+                    should_exit = True
+                    exit_reason = 'Max Hold Bars'
+                    exit_price = close_ * (1 - fee_rate) if entry_position > 0 else close_ * (1 + fee_rate)
+                elif target_position != entry_position:
+                    should_exit = True
+                    exit_reason = 'Signal Change'
+                    exit_price = close_ * (1 - fee_rate) if entry_position > 0 else close_ * (1 + fee_rate)
+
+            # --- 執行出場 ---
             if should_exit:
                 capital_used = current_equity * capital_ratio
                 maintenance_margin = capital_used * maintenance_margin_ratio
 
-                if entry_position > 0:
+                if entry_position > 0: # 多單
                     rtn = (exit_price / entry_price - 1) * leverage
-                else:
+                else: # 空單
                     rtn = (entry_price / exit_price - 1) * leverage
 
                 profit = capital_used * rtn
@@ -133,7 +168,7 @@ def backtest_signals(df: pd.DataFrame,
                 hold_bars.append(holding_period)
                 trades_log.append({
                     'entry_time': df.iloc[entry_index]['timestamp'],
-                    'exit_time': next_row['timestamp'],
+                    'exit_time': row['timestamp'],
                     'side': 'long' if entry_position > 0 else 'short',
                     'entry_price': entry_price,
                     'exit_price': exit_price,
@@ -192,7 +227,6 @@ def backtest_signals(df: pd.DataFrame,
 
         equity_curve[-1] = current_equity
 
-    # ===== 確保 equity_curve 長度與 df 一致 =====
     if len(equity_curve) < len(df):
         equity_curve += [equity_curve[-1]] * (len(df) - len(equity_curve))
 
@@ -200,7 +234,6 @@ def backtest_signals(df: pd.DataFrame,
     df['buy_and_hold'] = initial_capital * (1 + df['close'].pct_change().fillna(0)).cumprod()
     df['drawdown'] = df['equity'] / df['equity'].cummax() - 1
 
-    # ===== 安全計算報酬率 =====
     final_equity = df['equity'].iloc[-1]
     if pd.isna(final_equity) or initial_capital <= 0:
         total_return = 0
