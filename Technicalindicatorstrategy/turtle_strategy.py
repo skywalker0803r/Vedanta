@@ -27,7 +27,7 @@ def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limi
         if not data:
             break
 
-        all_data = data + all_data  # 新資料往前插
+        all_data = data + all_data
         end_timestamp = data[0][0] - 1
         remaining -= len(data)
 
@@ -65,58 +65,72 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
     # 計算 ATR，並移位避免看未來
     df['ATR'] = calculate_atr(df, 20).shift(1)
 
-    position = 0  # 0空倉, 1多單, -1空單
-    entry_price = 0
-    stop_loss = 0
+    # 初始狀態
+    position = 0  # 0: 空倉, 1: 多單, -1: 空單
+    entry_price = np.nan
+    stop_loss = np.nan
 
+    # 記錄訊號和倉位
     signals = []
-    stop_losses = []  # 用來存每根的停損值
+    positions = []
+    entry_prices = []
+    stop_losses = []
 
     for i in range(len(df)):
         if i < 20:
             signals.append(0)
-            stop_losses.append(stop_loss)
+            positions.append(0)
+            entry_prices.append(np.nan)
+            stop_losses.append(np.nan)
             continue
 
-        close = df.loc[i, 'close']
+        current_close = df.loc[i, 'close']
         atr = df.loc[i, 'ATR']
         high_20 = df.loc[i, '20_high']
         low_20 = df.loc[i, '20_low']
         high_10 = df.loc[i, '10_high']
         low_10 = df.loc[i, '10_low']
 
-        if position == 0:
-            if close > high_20:  # 突破 20 日高
+        # 預設當前K棒沒有交易動作
+        current_signal = 0
+
+        # --- 判斷出場 ---
+        if position == 1:  # 多單持倉
+            # 跌破 10 日低或觸發停損
+            if current_close < low_10 or current_close < stop_loss:
+                position = 0
+                entry_price = np.nan
+                stop_loss = np.nan
+                current_signal = -1  # 訊號改為 -1，代表平倉
+        elif position == -1:  # 空單持倉
+            # 突破 10 日高或觸發停損
+            if current_close > high_10 or current_close > stop_loss:
+                position = 0
+                entry_price = np.nan
+                stop_loss = np.nan
+                current_signal = 1  # 訊號改為 1，代表平倉
+
+        # --- 判斷進場 ---
+        # 只有在空倉狀態且當前K棒沒有平倉動作時，才判斷進場
+        if position == 0 and current_signal == 0:
+            if current_close > high_20:  # 突破 20 日高
                 position = 1
-                entry_price = close
+                entry_price = current_close
                 stop_loss = entry_price - 2 * atr
-                signals.append(1)  # 多單進場
-            elif close < low_20:  # 跌破 20 日低
+                current_signal = 1  # 訊號改為 1，代表開多
+            elif current_close < low_20:  # 跌破 20 日低
                 position = -1
-                entry_price = close
+                entry_price = current_close
                 stop_loss = entry_price + 2 * atr
-                signals.append(-1)  # 空單進場
-            else:
-                signals.append(0)
+                current_signal = -1  # 訊號改為 -1，代表開空
 
-        elif position == 1:
-            # 多單出場條件：跌破 10 日低或停損
-            if close < low_10 or close < stop_loss:
-                position = 0
-                signals.append(-1)  # 多單平倉
-            else:
-                signals.append(0)
-
-        elif position == -1:
-            # 空單出場條件：突破 10 日高或停損
-            if close > high_10 or close > stop_loss:
-                position = 0
-                signals.append(1)  # 空單平倉
-            else:
-                signals.append(0)
-
+        signals.append(current_signal)
+        positions.append(position)
+        entry_prices.append(entry_price)
         stop_losses.append(stop_loss)
 
+    df['position'] = positions
+    df['entry_price'] = entry_prices
     df['stop_loss'] = stop_losses
     df['signal'] = signals
     return df
@@ -126,4 +140,4 @@ if __name__ == "__main__":
     interval = "1h"
     end_time = datetime.utcnow()
     df_signals = get_signals(symbol, interval, end_time, limit=500)
-    print(df_signals[['timestamp', 'close', 'signal']].tail(30))
+    print(df_signals[['timestamp', 'close', 'position', 'signal']].tail(30))
