@@ -29,11 +29,57 @@ def detect_kd_signal(df: pd.DataFrame, k_period=14, d_period=3, buy_threshold=30
     high_max = df["high"].rolling(window=k_period).max()
     df["%K"] = 100 * (df["close"] - low_min) / (high_max - low_min + 1e-9)
     df["%D"] = df["%K"].rolling(window=d_period).mean()
+
+    # Initialize signal and position columns
     df["signal"] = 0
-    cross_up = (df["%K"] > df["%D"]) & (df["%K"].shift(1) <= df["%D"].shift(1)) & (df["%K"] < buy_threshold)
-    cross_down = (df["%K"] < df["%D"]) & (df["%K"].shift(1) >= df["%D"].shift(1)) & (df["%K"] > sell_threshold)
-    df.loc[cross_up, "signal"] = 1
-    df.loc[cross_down, "signal"] = -1
+    df["position"] = 0
+
+    current_position = 0 # Track current position (1: long, -1: short, 0: flat)
+    signals = []
+    positions = []
+
+    for i in range(len(df)):
+        # Ensure enough data for indicators
+        if i < k_period + d_period - 1: # Need enough bars for %K and %D calculation
+            signals.append(0)
+            positions.append(0)
+            continue
+
+        curr_k = df.loc[i, "%K"]
+        curr_d = df.loc[i, "%D"]
+        prev_k = df.loc[i-1, "%K"]
+        prev_d = df.loc[i-1, "%D"]
+
+        current_bar_signal = 0
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if %K crosses below %D or %K moves above sell_threshold
+            if (curr_k < curr_d and prev_k >= prev_d) or curr_k > sell_threshold:
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+        elif current_position == -1: # Currently short
+            # Exit if %K crosses above %D or %K moves below buy_threshold
+            if (curr_k > curr_d and prev_k <= prev_d) or curr_k < buy_threshold:
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            # Buy signal: %K crosses above %D and %K is below buy_threshold
+            if curr_k > curr_d and prev_k <= prev_d and curr_k < buy_threshold:
+                current_position = 1
+                current_bar_signal = 1 # Entry long signal
+            # Sell signal: %K crosses below %D and %K is above sell_threshold
+            elif curr_k < curr_d and prev_k >= prev_d and curr_k > sell_threshold:
+                current_position = -1
+                current_bar_signal = -1 # Entry short signal
+        
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+
+    df["signal"] = signals
+    df["position"] = positions
     return df
 
 def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300, k_period: int = 14, d_period: int = 3, buy_threshold: int = 30, sell_threshold: int = 70) -> pd.DataFrame:

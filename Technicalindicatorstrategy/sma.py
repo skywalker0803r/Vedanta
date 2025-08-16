@@ -48,12 +48,57 @@ def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limi
 def detect_sma_cross(df:pd.DataFrame,n1:int=5,n2:int=10) -> pd.DataFrame:
     df["sma_1"] = df["close"].rolling(window=n1).mean()
     df["sma_2"] = df["close"].rolling(window=n2).mean()
-    # 判斷黃金交叉與死亡交叉
+
+    # Initialize signal and position columns
     df["signal"] = 0
-    cross_up = (df["sma_1"] > df["sma_2"]) & (df["sma_1"].shift(1) <= df["sma_2"].shift(1))
-    cross_down = (df["sma_1"] < df["sma_2"]) & (df["sma_1"].shift(1) >= df["sma_2"].shift(1))
-    df.loc[cross_up, "signal"] = 1   # 黃金交叉
-    df.loc[cross_down, "signal"] = -1  # 死亡交叉
+    df["position"] = 0
+
+    current_position = 0 # Track current position (1: long, -1: short, 0: flat)
+    signals = []
+    positions = []
+
+    for i in range(len(df)):
+        # Ensure enough data for indicators
+        if i < max(n1, n2): # Need enough bars for SMA calculation
+            signals.append(0)
+            positions.append(0)
+            continue
+
+        curr_sma1 = df.loc[i, "sma_1"]
+        curr_sma2 = df.loc[i, "sma_2"]
+        prev_sma1 = df.loc[i-1, "sma_1"]
+        prev_sma2 = df.loc[i-1, "sma_2"]
+
+        current_bar_signal = 0
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if SMA1 crosses below SMA2
+            if curr_sma1 < curr_sma2 and prev_sma1 >= prev_sma2:
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+        elif current_position == -1: # Currently short
+            # Exit if SMA1 crosses above SMA2
+            if curr_sma1 > curr_sma2 and prev_sma1 <= prev_sma2:
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            # Buy signal: SMA1 crosses above SMA2
+            if curr_sma1 > curr_sma2 and prev_sma1 <= prev_sma2:
+                current_position = 1
+                current_bar_signal = 1 # Entry long signal
+            # Sell signal: SMA1 crosses below SMA2
+            elif curr_sma1 < curr_sma2 and prev_sma1 >= prev_sma2:
+                current_position = -1
+                current_bar_signal = -1 # Entry short signal
+        
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+
+    df["signal"] = signals
+    df["position"] = positions
     return df
 
 def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300, n1: int = 90, n2: int = 40) -> pd.DataFrame:

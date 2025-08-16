@@ -84,7 +84,7 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
     df['MACDh'] = calculate_macd(df['close'])
 
     # 初始狀態
-    position = 0
+    current_position = 0 # 追蹤當前倉位
     entry_price = np.nan
     stop_loss = np.nan
     prev_macd_hist = np.nan  # 追蹤前一期的 MACD 柱狀體
@@ -116,45 +116,45 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
         current_reason = ""
 
         # --- 判斷出場 ---
-        if position == 1:  # 多單持倉
+        if current_position == 1:  # 多單持倉
             # 柱狀體反轉向下或觸發停損
             if macd_hist < prev_macd_hist:
-                position = 0
+                current_position = 0
                 entry_price = np.nan
                 stop_loss = np.nan
                 current_signal = -1  # 訊號改為 -1，代表平倉
                 current_reason = "多單平倉"
             elif current_close < stop_loss:
-                position = 0
+                current_position = 0
                 entry_price = np.nan
                 stop_loss = np.nan
                 current_signal = -1  # 訊號改為 -1，代表平倉
                 current_reason = "多單平倉"
-        elif position == -1:  # 空單持倉
+        elif current_position == -1:  # 空單持倉
             # 柱狀體反轉向上或觸發停損
             if macd_hist > prev_macd_hist:
-                position = 0
+                current_position = 0
                 entry_price = np.nan
                 stop_loss = np.nan
                 current_signal = 1  # 訊號改為 1，代表平倉
                 current_reason = "空單平倉"
             elif current_close > stop_loss:
-                position = 0
+                current_position = 0
                 entry_price = np.nan
                 stop_loss = np.nan
                 current_signal = 1  # 訊號改為 1，代表平倉
                 current_reason = "空單平倉"
 
         # --- 判斷進場 ---
-        if position == 0 and current_signal == 0:
+        if current_position == 0 and current_signal == 0:
             if current_close > high_20:  # 突破 20 日高
-                position = 1
+                current_position = 1
                 entry_price = current_close
                 stop_loss = entry_price - 2 * atr
                 current_signal = 1  # 訊號改為 1，代表開多
                 current_reason = "多單進場"
             elif current_close < low_20:  # 跌破 20 日低
-                position = -1
+                current_position = -1
                 entry_price = current_close
                 stop_loss = entry_price + 2 * atr
                 current_signal = -1  # 訊號改為 -1，代表開空
@@ -164,7 +164,7 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
         prev_macd_hist = macd_hist
 
         signals.append(current_signal)
-        positions.append(position)
+        positions.append(current_position) # Append the actual current_position
         entry_prices.append(entry_price)
         stop_losses.append(stop_loss)
         reasons.append(current_reason)

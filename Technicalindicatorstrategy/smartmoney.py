@@ -70,26 +70,63 @@ def detect_smart_money_signals(df: pd.DataFrame,
     df["main_hull"] = calculate_hull_moving_average(df["close"], main_hull_period)
     df["second_hull"] = calculate_hull_moving_average(df["close"], second_hull_period)
 
-    # --- Signal Logic (Based on Vegas EMAs and HMA) ---
-    # Buy signal: Price crosses above Vegas tunnel AND Main Hull is trending up
-    buy_condition = (
-        (df["close"] > df[f"ema_{vegas2_period}"]) & 
-        (df["close"].shift(1) <= df[f"ema_{vegas2_period}"].shift(1)) & 
-        (df["main_hull"].diff() > hma_trend_threshold)
-    )
+    # Initialize signal and position columns
+    df["signal"] = 0
+    df["position"] = 0
 
-    # Sell signal: Price crosses below Vegas tunnel AND Main Hull is trending down
-    sell_condition = (
-        (df["close"] < df[f"ema_{vegas1_period}"]) & 
-        (df["close"].shift(1) >= df[f"ema_{vegas1_period}"].shift(1)) & 
-        (df["main_hull"].diff() < -hma_trend_threshold)
-    )
+    current_position = 0 # Track current position (1: long, -1: short, 0: flat)
+    signals = []
+    positions = []
 
-    df.loc[buy_condition, "signal"] = 1
-    df.loc[sell_condition, "signal"] = -1
+    for i in range(len(df)):
+        # Ensure enough data for indicators
+        # This strategy uses multiple periods, so we need to ensure all are calculated
+        max_period = max(vegas1_period, vegas2_period, max(ema_periods), main_hull_period, second_hull_period)
+        if i < max_period + 1: # +1 for shift/diff operations
+            signals.append(0)
+            positions.append(0)
+            continue
 
-    # --- End of Signal Logic ---
+        curr_close = df.loc[i, "close"]
+        curr_vegas1_ema = df.loc[i, f"ema_{vegas1_period}"]
+        curr_vegas2_ema = df.loc[i, f"ema_{vegas2_period}"]
+        curr_main_hull = df.loc[i, "main_hull"]
 
+        prev_close = df.loc[i-1, "close"]
+        prev_vegas1_ema = df.loc[i-1, f"ema_{vegas1_period}"]
+        prev_vegas2_ema = df.loc[i-1, f"ema_{vegas2_period}"]
+        prev_main_hull = df.loc[i-1, "main_hull"]
+
+        current_bar_signal = 0
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if price crosses below Vegas1 EMA OR Main Hull is no longer trending up
+            if (curr_close < curr_vegas1_ema and prev_close >= prev_vegas1_ema) or (curr_main_hull - prev_main_hull <= hma_trend_threshold):
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+        elif current_position == -1: # Currently short
+            # Exit if price crosses above Vegas2 EMA OR Main Hull is no longer trending down
+            if (curr_close > curr_vegas2_ema and prev_close <= prev_vegas2_ema) or (curr_main_hull - prev_main_hull >= -hma_trend_threshold):
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            # Buy signal: Price crosses above Vegas2 EMA AND Main Hull is trending up
+            if (curr_close > curr_vegas2_ema and prev_close <= prev_vegas2_ema) and (curr_main_hull - prev_main_hull > hma_trend_threshold):
+                current_position = 1
+                current_bar_signal = 1 # Entry long signal
+            # Sell signal: Price crosses below Vegas1 EMA AND Main Hull is trending down
+            elif (curr_close < curr_vegas1_ema and prev_close >= prev_vegas1_ema) and (curr_main_hull - prev_main_hull < -hma_trend_threshold):
+                current_position = -1
+                current_bar_signal = -1 # Entry short signal
+        
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+
+    df["signal"] = signals
+    df["position"] = positions
     return df
 
 def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 1000,

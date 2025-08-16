@@ -90,6 +90,8 @@ def calculate_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float =
     df.loc[(df['direction'] == 1) & (df['direction'].shift(1) == -1), 'signal'] = 1
     df.loc[(df['direction'] == -1) & (df['direction'].shift(1) == 1), 'signal'] = -1
 
+    df['position'] = df['direction'] # SuperTrend direction directly represents the position
+
     return df
 
 def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300, period: int = 3, multiplier: float = 1) -> pd.DataFrame:

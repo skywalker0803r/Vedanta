@@ -127,16 +127,57 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 30)
     merged["sentiment_sma3"] = merged["sentiment_score"].rolling(3).mean()
     merged["sentiment_sma7"] = merged["sentiment_score"].rolling(7).mean()
 
-    def signal_fn(row):
-        if row["sentiment_sma3"] > row["sentiment_sma7"]:
-            return 1
-        elif row["sentiment_sma3"] < row["sentiment_sma7"]:
-            return -1
-        else:
-            return 0
+    # Initialize position tracking
+    current_position = 0
+    positions = []
+    signals = [] # To store the final signal (entry/exit)
 
-    merged["signal"] = merged.apply(signal_fn, axis=1)
-    return merged[["timestamp", "close", "sentiment_score", "sentiment_sma3", "sentiment_sma7", "signal"]]
+    # Iterate through the merged DataFrame to determine position
+    for i in range(len(merged)):
+        curr_sma3 = merged.loc[i, "sentiment_sma3"]
+        curr_sma7 = merged.loc[i, "sentiment_sma7"]
+
+        # Handle NaN values for initial bars where SMA is not yet calculated
+        if pd.isna(curr_sma3) or pd.isna(curr_sma7):
+            signals.append(0)
+            positions.append(0)
+            continue
+
+        prev_sma3 = merged.loc[i-1, "sentiment_sma3"] if i > 0 else np.nan
+        prev_sma7 = merged.loc[i-1, "sentiment_sma7"] if i > 0 else np.nan
+
+        current_bar_signal = 0
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if SMA3 crosses below SMA7
+            if curr_sma3 < curr_sma7 and (pd.isna(prev_sma3) or prev_sma3 >= prev_sma7):
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+        elif current_position == -1: # Currently short
+            # Exit if SMA3 crosses above SMA7
+            if curr_sma3 > curr_sma7 and (pd.isna(prev_sma3) or prev_sma3 <= prev_sma7):
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            # Buy signal: SMA3 crosses above SMA7
+            if curr_sma3 > curr_sma7 and (pd.isna(prev_sma3) or prev_sma3 <= prev_sma7):
+                current_position = 1
+                current_bar_signal = 1 # Entry long signal
+            # Sell signal: SMA3 crosses below SMA7
+            elif curr_sma3 < curr_sma7 and (pd.isna(prev_sma3) or prev_sma3 >= prev_sma7):
+                current_position = -1
+                current_bar_signal = -1 # Entry short signal
+        
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+
+    merged["signal"] = signals
+    merged["position"] = positions
+
+    return merged[["timestamp", "close", "sentiment_score", "sentiment_sma3", "sentiment_sma7", "signal", "position"]]
 
 # =========================
 # ✅ 範例使用

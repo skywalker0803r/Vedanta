@@ -61,6 +61,76 @@ def detect_stochastic_range_strategy_optimized(
     df["tr"] = df["high"] - df["low"]
     df["atr"] = df["tr"].rolling(window=atr_period).mean()
 
+    # Initialize signal and position columns
+    df["signal"] = 0
+    df["position"] = 0
+
+    current_position = 0 # Track current position (1: long, -1: short, 0: flat) 
+    signals = []
+    positions = []
+
+    for i in range(len(df)):
+        # Ensure enough data for indicators
+        max_period = max(k_period, d_period, trend_ema_period, atr_period)
+        if i < max_period: 
+            signals.append(0)
+            positions.append(0)
+            continue
+
+        curr_close = df.loc[i, "close"]
+        curr_k = df.loc[i, "%K"]
+        curr_d = df.loc[i, "%D"]
+        curr_ema = df.loc[i, f"ema_{trend_ema_period}"]
+        curr_atr = df.loc[i, "atr"]
+
+        prev_k = df.loc[i-1, "%K"]
+        prev_d = df.loc[i-1, "%D"]
+
+        current_bar_signal = 0
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if %K crosses below %D OR price crosses below long-term EMA
+            if (curr_k < curr_d and prev_k >= prev_d) or (curr_close < curr_ema):
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+        elif current_position == -1: # Currently short
+            # Exit if %K crosses above %D OR price crosses above long-term EMA
+            if (curr_k > curr_d and prev_k <= prev_d) or (curr_close > curr_ema):
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            # Buy signal: Price above long-term EMA, %K crosses above %D, %K is oversold, AND ATR is above atr_threshold
+            if (curr_close > curr_ema) and \
+               (curr_k > curr_d and prev_k <= prev_d) and \
+               (curr_k < oversold) and \
+               (curr_atr > atr_threshold):
+                current_position = 1
+                current_bar_signal = 1 # Entry long signal
+            # Sell signal: Price below long-term EMA, %K crosses below %D, %K is overbought, AND ATR is above atr_threshold
+            elif (curr_close < curr_ema) and \
+                 (curr_k < curr_d and prev_k >= prev_d) and \
+                 (curr_k > overbought) and \
+                 (curr_atr > atr_threshold):
+                current_position = -1
+                current_bar_signal = -1 # Entry short signal
+        
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+
+    df["signal"] = signals
+    df["position"] = positions
+    return df
+
+    # 長期趨勢EMA
+    df[f"ema_{trend_ema_period}"] = df["close"].ewm(span=trend_ema_period, adjust=False).mean()
+
+    # ATR 計算
+    df["tr"] = df["high"] - df["low"]
+    df["atr"] = df["tr"].rolling(window=atr_period).mean()
+
     df["signal"] = 0
     # 多頭趨勢且超賣區買進訊號
     buy_signal = (

@@ -91,29 +91,67 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300
     # 計算 MACD 柱狀圖 (Histogram)
     df['histogram'] = df['macd'] - df['signal_line']
     
-    # 初始化訊號欄位
+    # 初始化訊號和倉位欄位
     df["signal"] = 0
     df["action"] = ""
+    df["position"] = 0 # 新增 position 欄位
+
+    current_position = 0 # 追蹤當前倉位
+    signals = []
+    positions = []
+    actions = []
 
     # 判斷買賣訊號 (金叉與死叉)
     for i in range(1, len(df)):
-        # MACD 金叉 (買入訊號)
-        if df.at[i-1, 'macd'] < df.at[i-1, 'signal_line'] and \
-           df.at[i, 'macd'] > df.at[i, 'signal_line']:
-            df.at[i, "signal"] = 1
-            if df.at[i, 'macd'] > 0:
-                df.at[i, "action"] = "買入 (多頭金叉)"
-            else:
-                df.at[i, "action"] = "買入 (空頭金叉)"
-        
-        # MACD 死叉 (賣出訊號)
-        elif df.at[i-1, 'macd'] > df.at[i-1, 'signal_line'] and \
-             df.at[i, 'macd'] < df.at[i, 'signal_line']:
-            df.at[i, "signal"] = -1
-            if df.at[i, 'macd'] < 0:
-                df.at[i, "action"] = "賣出 (空頭死叉)"
-            else:
-                df.at[i, "action"] = "賣出 (多頭死叉)"
+        current_bar_signal = 0
+        current_bar_action = ""
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if MACD crosses below Signal Line
+            if df.at[i-1, 'macd'] > df.at[i-1, 'signal_line'] and \
+               df.at[i, 'macd'] < df.at[i, 'signal_line']:
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+                current_bar_action = "平多"
+        elif current_position == -1: # Currently short
+            # Exit if MACD crosses above Signal Line
+            if df.at[i-1, 'macd'] < df.at[i-1, 'signal_line'] and \
+               df.at[i, 'macd'] > df.at[i, 'signal_line']:
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+                current_bar_action = "平空"
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            # MACD 金叉 (買入訊號)
+            if df.at[i-1, 'macd'] < df.at[i-1, 'signal_line'] and \
+               df.at[i, 'macd'] > df.at[i, 'signal_line']:
+                current_position = 1
+                current_bar_signal = 1
+                if df.at[i, 'macd'] > 0:
+                    current_bar_action = "買入 (多頭金叉)"
+                else:
+                    current_bar_action = "買入 (空頭金叉)"
+            
+            # MACD 死叉 (賣出訊號)
+            elif df.at[i-1, 'macd'] > df.at[i-1, 'signal_line'] and \
+                 df.at[i, 'macd'] < df.at[i, 'signal_line']:
+                current_position = -1
+                current_bar_signal = -1
+                if df.at[i, 'macd'] < 0:
+                    current_bar_action = "賣出 (空頭死叉)"
+                else:
+                    current_bar_action = "賣出 (多頭死叉)"
+
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+        actions.append(current_bar_action)
+
+    return df.iloc[300:].reset_index(drop=True)[[
+        "timestamp", "open", "high", "low", "close",
+        "macd", "signal_line", "histogram", "signal", "action", "position"
+    ]]
 
     return df.iloc[300:].reset_index(drop=True)[[
         "timestamp", "open", "high", "low", "close",

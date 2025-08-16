@@ -26,9 +26,55 @@ def get_binance_kline(symbol: str, interval: str, end_time: datetime, limit: int
 def detect_momentum_signal(df: pd.DataFrame, period: int = 10, momentum_threshold: float = 0) -> pd.DataFrame:
     df = df.copy()
     df["momentum"] = df["close"] - df["close"].shift(period)
+
+    # Initialize signal and position columns
     df["signal"] = 0
-    df.loc[(df["momentum"] > momentum_threshold) & (df["momentum"].shift(1) <= momentum_threshold), "signal"] = 1
-    df.loc[(df["momentum"] < -momentum_threshold) & (df["momentum"].shift(1) >= -momentum_threshold), "signal"] = -1
+    df["position"] = 0
+
+    current_position = 0 # Track current position (1: long, -1: short, 0: flat)
+    signals = []
+    positions = []
+
+    for i in range(len(df)):
+        # Ensure enough data for indicators
+        if i < period: # Need enough bars for Momentum calculation
+            signals.append(0)
+            positions.append(0)
+            continue
+
+        curr_momentum = df.loc[i, "momentum"]
+        prev_momentum = df.loc[i-1, "momentum"]
+
+        current_bar_signal = 0
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if Momentum crosses below 0
+            if curr_momentum < 0 and prev_momentum >= 0:
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+        elif current_position == -1: # Currently short
+            # Exit if Momentum crosses above 0
+            if curr_momentum > 0 and prev_momentum <= 0:
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            # Buy signal: Momentum crosses above momentum_threshold
+            if curr_momentum > momentum_threshold and prev_momentum <= momentum_threshold:
+                current_position = 1
+                current_bar_signal = 1 # Entry long signal
+            # Sell signal: Momentum crosses below -momentum_threshold
+            elif curr_momentum < -momentum_threshold and prev_momentum >= -momentum_threshold:
+                current_position = -1
+                current_bar_signal = -1 # Entry short signal
+        
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+
+    df["signal"] = signals
+    df["position"] = positions
     return df
 
 

@@ -66,7 +66,7 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
     df['ATR'] = calculate_atr(df, 20).shift(1)
 
     # 初始狀態
-    position = 0  # 0: 空倉, 1: 多單, -1: 空單
+    current_position = 0  # 0: 空倉, 1: 多單, -1: 空單
     entry_price = np.nan
     stop_loss = np.nan
 
@@ -95,37 +95,37 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
         current_signal = 0
 
         # --- 判斷出場 ---
-        if position == 1:  # 多單持倉
+        if current_position == 1:  # 多單持倉
             # 跌破 10 日低或觸發停損
             if current_close < low_10 or current_close < stop_loss:
-                position = 0
+                current_position = 0
                 entry_price = np.nan
                 stop_loss = np.nan
                 current_signal = -1  # 訊號改為 -1，代表平倉
-        elif position == -1:  # 空單持倉
+        elif current_position == -1:  # 空單持倉
             # 突破 10 日高或觸發停損
             if current_close > high_10 or current_close > stop_loss:
-                position = 0
+                current_position = 0
                 entry_price = np.nan
                 stop_loss = np.nan
                 current_signal = 1  # 訊號改為 1，代表平倉
 
         # --- 判斷進場 ---
         # 只有在空倉狀態且當前K棒沒有平倉動作時，才判斷進場
-        if position == 0 and current_signal == 0:
+        if current_position == 0 and current_signal == 0:
             if current_close > high_20:  # 突破 20 日高
-                position = 1
+                current_position = 1
                 entry_price = current_close
                 stop_loss = entry_price - 2 * atr
                 current_signal = 1  # 訊號改為 1，代表開多
             elif current_close < low_20:  # 跌破 20 日低
-                position = -1
+                current_position = -1
                 entry_price = current_close
                 stop_loss = entry_price + 2 * atr
                 current_signal = -1  # 訊號改為 -1，代表開空
 
         signals.append(current_signal)
-        positions.append(position)
+        positions.append(current_position) # Append the actual current_position
         entry_prices.append(entry_price)
         stop_losses.append(stop_loss)
 

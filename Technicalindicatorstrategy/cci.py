@@ -30,9 +30,55 @@ def detect_cci_signal(df: pd.DataFrame, period: int = 20, cci_threshold: int = 1
     ma = tp.rolling(period).mean()
     md = tp.rolling(period).apply(lambda x: np.mean(np.abs(x - np.mean(x))))
     df["cci"] = (tp - ma) / (0.015 * md + 1e-9)
+
+    # Initialize signal and position columns
     df["signal"] = 0
-    df.loc[(df["cci"] > -cci_threshold) & (df["cci"].shift(1) <= -cci_threshold), "signal"] = 1
-    df.loc[(df["cci"] < cci_threshold) & (df["cci"].shift(1) >= cci_threshold), "signal"] = -1
+    df["position"] = 0
+
+    current_position = 0 # Track current position (1: long, -1: short, 0: flat)
+    signals = []
+    positions = []
+
+    for i in range(len(df)):
+        # Ensure enough data for indicators
+        if i < period: # Need enough bars for CCI calculation
+            signals.append(0)
+            positions.append(0)
+            continue
+
+        curr_cci = df.loc[i, "cci"]
+        prev_cci = df.loc[i-1, "cci"]
+
+        current_bar_signal = 0
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if CCI crosses below 0
+            if curr_cci < 0 and prev_cci >= 0:
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+        elif current_position == -1: # Currently short
+            # Exit if CCI crosses above 0
+            if curr_cci > 0 and prev_cci <= 0:
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            # Buy signal: CCI crosses above -threshold
+            if curr_cci > -cci_threshold and prev_cci <= -cci_threshold:
+                current_position = 1
+                current_bar_signal = 1 # Entry long signal
+            # Sell signal: CCI crosses below threshold
+            elif curr_cci < cci_threshold and prev_cci >= cci_threshold:
+                current_position = -1
+                current_bar_signal = -1 # Entry short signal
+        
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+
+    df["signal"] = signals
+    df["position"] = positions
     return df
 
 
