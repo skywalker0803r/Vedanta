@@ -1,8 +1,8 @@
 //@version=5
 strategy("MACD + Donchian + ATR Stop Strategy (10x sizing)",
      overlay=true,
-     margin_long=100,              // 若想用「10% 保證金=10倍槓桿」的保證金模型，這裡可改成 10
-     margin_short=100,
+     margin_long=10,              // 若想用「10% 保證金=10倍槓桿」的保證金模型，這裡可改成 10
+     margin_short=10,
      process_orders_on_close=true,
      default_qty_type=strategy.percent_of_equity,  // 用資金百分比下單
      default_qty_value=100)                       // 1000% = 相當於 10 倍部位
@@ -13,6 +13,8 @@ slowLength   = input.int(26, "MACD Slow EMA")
 signalLength = input.int(9, "MACD Signal EMA")
 atrLength    = input.int(20, "ATR 週期")
 donchLength  = input.int(20, "Donchian Channel 週期")
+ema144 = ta.ema(close, 144)
+ema169 = ta.ema(close, 169)
 
 // === 計算 Donchian Channel (shift 1) ===
 donchHigh = ta.highest(high, donchLength)[1]
