@@ -1,0 +1,68 @@
+//@version=5
+strategy("MACD + Donchian + ATR Stop Strategy (10x sizing)",
+     overlay=true,
+     margin_long=100,              // 若想用「10% 保證金=10倍槓桿」的保證金模型，這裡可改成 10
+     margin_short=100,
+     process_orders_on_close=true,
+     default_qty_type=strategy.percent_of_equity,  // 用資金百分比下單
+     default_qty_value=100)                       // 1000% = 相當於 10 倍部位
+
+// === 參數 ===
+fastLength   = input.int(12, "MACD Fast EMA")
+slowLength   = input.int(26, "MACD Slow EMA")
+signalLength = input.int(9, "MACD Signal EMA")
+atrLength    = input.int(20, "ATR 週期")
+donchLength  = input.int(20, "Donchian Channel 週期")
+
+// === 計算 Donchian Channel (shift 1) ===
+donchHigh = ta.highest(high, donchLength)[1]
+donchLow  = ta.lowest(low, donchLength)[1]
+
+// === ATR (簡單移動平均) ===
+tr  = ta.tr(true)
+atr = ta.sma(tr, atrLength)[1]
+
+// === MACD (手動計算) ===
+emaFast   = ta.ema(close, fastLength)
+emaSlow   = ta.ema(close, slowLength)
+macdLine  = emaFast - emaSlow
+signal    = ta.ema(macdLine, signalLength)
+macdHist  = macdLine - signal
+
+// === 前一期 MACD 柱體 ===
+macdHistPrev = macdHist[1]
+
+// === 變數 ===
+var float entryPrice = na
+var float stopLoss   = na
+
+// === 出場條件 ===
+longExit  = strategy.position_size > 0 and (macdHist < macdHistPrev or (not na(stopLoss) and close < stopLoss))
+shortExit = strategy.position_size < 0 and (macdHist > macdHistPrev or (not na(stopLoss) and close > stopLoss))
+
+if longExit
+    strategy.close("Long", comment="多單平倉")
+    entryPrice := na
+    stopLoss   := na
+
+if shortExit
+    strategy.close("Short", comment="空單平倉")
+    entryPrice := na
+    stopLoss   := na
+
+// === 進場條件 ===
+if strategy.position_size == 0
+    if close > donchHigh
+        entryPrice := close
+        stopLoss   := entryPrice - 2 * atr
+        strategy.entry("Long", strategy.long, comment="多單進場")
+    else if close < donchLow
+        entryPrice := close
+        stopLoss   := entryPrice + 2 * atr
+        strategy.entry("Short", strategy.short, comment="空單進場")
+
+// === 助視覺化 ===
+plot(donchHigh, "20 High", color=color.green)
+plot(donchLow,  "20 Low",  color=color.red)
+plot(stopLoss,  "Stop Loss", color=color.yellow)
+plot(macdHist,  "MACD Hist", color=color.blue)  // 隱藏但可調用
