@@ -37,7 +37,7 @@ def plot_backtest_result(result, max_trades_to_draw=10, max_points=3000):
     peak_idx = np.argmax(equity[:min_dd_idx + 1])
 
     # --- 畫圖開始 ---
-    fig, axs = plt.subplots(3, 1, figsize=(15, 11), gridspec_kw={"height_ratios": [2.5, 2, 1]})
+    fig, axs = plt.subplots(3, 1, figsize=(10, 10), gridspec_kw={"height_ratios": [2.5, 2, 1]})
 
     # === [1] Equity Curve ===
     axs[0].plot(timestamp_ds, equity_pct, label="Strategy Return (%)", color="blue", linewidth=2)
