@@ -4,7 +4,7 @@ import pandas as pd
 def backtest_signals(df: pd.DataFrame,
                                 initial_capital=100,
                                 fee_rate=0.001,
-                                leverage=1,
+                                leverage=10, # Adjusted to match Pine Script's 10x margin
                                 allow_short=True,
                                 stop_loss=None,
                                 take_profit=None,
@@ -49,14 +49,16 @@ def backtest_signals(df: pd.DataFrame,
         df['timestamp'] = pd.to_datetime(df['timestamp'])
 
     if delay_entry:
-        df['used_signal'] = df['signal'].shift(1).fillna(0)
+        # Use the position from get_signals, shifted by 1 to avoid lookahead
+        # The 'position' column in the input df should be 1 (long), -1 (short), or 0 (flat)
+        df['target_position'] = df['position'].shift(1).fillna(0)
     else:
-        df['used_signal'] = df['signal'].fillna(0)
+        # Use the position from get_signals directly
+        df['target_position'] = df['position'].fillna(0)
 
-    df['position'] = np.where(df['used_signal'] == 1, leverage,
-                              np.where(df['used_signal'] == -1, -leverage if allow_short else 0, np.nan))
-    df['position'] = df['position'].ffill().fillna(0)
-    df.loc[0, 'position'] = 0
+    # The 'position' column in the input df is now the source for target_position.
+    # The previous line that re-derived 'df['position']' from 'used_signal' is removed.
+    df.loc[0, 'target_position'] = 0 # Ensure first bar has no target position
 
     equity_curve = [initial_capital]
     trade_returns, hold_bars, trades_log = [], [], []
@@ -69,7 +71,7 @@ def backtest_signals(df: pd.DataFrame,
     for i in range(1, len(df) - 1):
         row = df.iloc[i]
         next_row = df.iloc[i + 1]
-        target_position = row['position']
+        target_position = row['target_position']
 
         open_ = row['open']
         high_ = row['high']
