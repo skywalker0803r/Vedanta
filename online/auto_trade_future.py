@@ -171,14 +171,14 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h",
                         print(f"⏰ 超過最大持有K棒數({held_bars}/{max_hold_bars})，執行強制平倉")
                         close_all_positions(client, symbol)
 
-            # 多單持倉但訊號做空，平多單
+            # 多單持倉但訊號做空，平多單(單純平倉不進場)
             if position_side == 'long' and signal == -1:
                 print("🔻 訊號切換做空，準備平多單...")
                 close_all_positions(client, symbol)
                 position_amt, position_side, entry_price, entry_time = get_position(client, symbol)
                 print(f"♻️ 持倉更新: {position_amt:.6f} ({position_side})")
 
-            # 空單持倉但訊號做多，平空單
+            # 空單持倉但訊號做多，平空單(單純平倉不進場)
             elif position_side == 'short' and signal == 1:
                 print("🔺 訊號切換做多，準備平空單...")
                 close_all_positions(client, symbol)
