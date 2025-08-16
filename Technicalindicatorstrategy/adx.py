@@ -52,11 +52,59 @@ def detect_adx_signal(df: pd.DataFrame, period: int = 14, adx_threshold: int = 2
     df["adx"] = adx
     df["plus_di"] = plus_di
     df["minus_di"] = minus_di
+
+    # Initialize signal and position columns
     df["signal"] = 0
-    buy = (adx > adx_threshold) & (plus_di > minus_di) & (plus_di.shift(1) <= minus_di.shift(1))
-    sell = (adx > adx_threshold) & (plus_di < minus_di) & (plus_di.shift(1) >= minus_di.shift(1))
-    df.loc[buy, "signal"] = 1
-    df.loc[sell, "signal"] = -1
+    df["position"] = 0
+
+    current_position = 0 # Track current position (1: long, -1: short, 0: flat)
+    signals = []
+    positions = []
+
+    for i in range(len(df)):
+        # Ensure enough data for indicators
+        if i < period * 2: # Need enough bars for ADX calculation
+            signals.append(0)
+            positions.append(0)
+            continue
+
+        curr_adx = df.loc[i, "adx"]
+        curr_plus_di = df.loc[i, "plus_di"]
+        curr_minus_di = df.loc[i, "minus_di"]
+
+        prev_plus_di = df.loc[i-1, "plus_di"]
+        prev_minus_di = df.loc[i-1, "minus_di"]
+
+        current_bar_signal = 0
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if +DI crosses below -DI or ADX drops below threshold
+            if (curr_plus_di < curr_minus_di and prev_plus_di >= prev_minus_di) or curr_adx < adx_threshold:
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+        elif current_position == -1: # Currently short
+            # Exit if -DI crosses below +DI or ADX drops below threshold
+            if (curr_minus_di < curr_plus_di and prev_minus_di >= prev_plus_di) or curr_adx < adx_threshold:
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            # Buy signal: ADX > threshold and +DI crosses above -DI
+            if curr_adx > adx_threshold and curr_plus_di > curr_minus_di and prev_plus_di <= prev_minus_di:
+                current_position = 1
+                current_bar_signal = 1 # Entry long signal
+            # Sell signal: ADX > threshold and -DI crosses above +DI
+            elif curr_adx > adx_threshold and curr_plus_di < curr_minus_di and prev_plus_di >= prev_minus_di:
+                current_position = -1
+                current_bar_signal = -1 # Entry short signal
+        
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+
+    df["signal"] = signals
+    df["position"] = positions
     return df
 
 def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300, period: int = 14, adx_threshold: int = 25) -> pd.DataFrame:

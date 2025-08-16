@@ -29,9 +29,57 @@ def detect_macd_signal(df: pd.DataFrame, fast=12, slow=26, signal_period=9) -> p
     ema_slow = df["close"].ewm(span=slow, adjust=False).mean()
     df["macd"] = ema_fast - ema_slow
     df["macd_signal"] = df["macd"].ewm(span=signal_period, adjust=False).mean()
+
+    # Initialize signal and position columns
     df["signal"] = 0
-    df.loc[(df["macd"] > df["macd_signal"]) & (df["macd"].shift(1) <= df["macd_signal"].shift(1)), "signal"] = 1
-    df.loc[(df["macd"] < df["macd_signal"]) & (df["macd"].shift(1) >= df["macd_signal"].shift(1)), "signal"] = -1
+    df["position"] = 0
+
+    current_position = 0 # Track current position (1: long, -1: short, 0: flat)
+    signals = []
+    positions = []
+
+    for i in range(len(df)):
+        # Ensure enough data for indicators
+        if i < slow + signal_period - 1: # Need enough bars for MACD and Signal calculation
+            signals.append(0)
+            positions.append(0)
+            continue
+
+        curr_macd = df.loc[i, "macd"]
+        curr_macd_signal = df.loc[i, "macd_signal"]
+        prev_macd = df.loc[i-1, "macd"]
+        prev_macd_signal = df.loc[i-1, "macd_signal"]
+
+        current_bar_signal = 0
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if MACD crosses below MACD Signal
+            if curr_macd < curr_macd_signal and prev_macd >= prev_macd_signal:
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+        elif current_position == -1: # Currently short
+            # Exit if MACD crosses above MACD Signal
+            if curr_macd > curr_macd_signal and prev_macd <= prev_macd_signal:
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            # Buy signal: MACD crosses above MACD Signal
+            if curr_macd > curr_macd_signal and prev_macd <= prev_macd_signal:
+                current_position = 1
+                current_bar_signal = 1 # Entry long signal
+            # Sell signal: MACD crosses below MACD Signal
+            elif curr_macd < curr_macd_signal and prev_macd >= prev_macd_signal:
+                current_position = -1
+                current_bar_signal = -1 # Entry short signal
+        
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+
+    df["signal"] = signals
+    df["position"] = positions
     return df
 
 def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300, fast: int = 12, slow: int = 26, signal_period: int = 9) -> pd.DataFrame:

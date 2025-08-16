@@ -177,6 +177,61 @@ def attach_kline_to_signals_any_interval(df_signals, symbol="WBTCUSDT", interval
     return df_merged
 
 def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 1000) -> pd.DataFrame:
-    df_all_signals = get_all_signals("WBTCUSDT", wallet_address="0x86b792e6a20c8e8ef56ff4fc92aedcb62dbeefed", erc20=True, token_list=["0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"])
-    df_all_signals_kline = attach_kline_to_signals_any_interval(df_all_signals, symbol="WBTCUSDT", interval=interval, end_time=end_time)
-    return df_all_signals_kline
+    # 1. 抓取完整的 K 線數據
+    df_kline = get_binance_kline(symbol, interval, end_time=end_time, total_limit=limit)
+    if df_kline.empty:
+        return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume", "signal", "position"])
+
+    # 2. 抓取鯨魚交易訊號
+    # 這裡假設 WBTCUSDT 的鯨魚錢包和 token_list 是固定的
+    df_whale_tx = get_all_signals("WBTCUSDT", wallet_address="0x86b792e6a20c8e8ef56ff4fc92aedcb62dbeefed", erc20=True, token_list=["0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599"], start_time=df_kline["timestamp"].min(), end_time=df_kline["timestamp"].max())
+
+    # 3. 將鯨魚交易訊號合併到 K 線數據上
+    # 使用 merge_asof 確保每個 K 線都有最新的交易訊號
+    df_merged = pd.merge_asof(
+        df_kline.sort_values("timestamp"),
+        df_whale_tx.sort_values("timestamp").rename(columns={"direction": "tx_signal"}), # Rename to avoid conflict
+        on="timestamp",
+        direction="backward"
+    )
+
+    # 填充沒有交易訊號的 K 線為 0
+    df_merged["tx_signal"] = df_merged["tx_signal"].fillna(0)
+
+    # 4. 根據交易訊號生成 position 欄位
+    current_position = 0
+    positions = []
+    signals = [] # This will be the final signal column for backtest.py
+
+    for i in range(len(df_merged)):
+        tx_signal = df_merged.loc[i, "tx_signal"]
+        current_bar_signal = 0
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if an opposite (sell) signal occurs
+            if tx_signal == -1:
+                current_position = 0
+                current_bar_signal = -1 # Exit long
+        elif current_position == -1: # Currently short
+            # Exit if an opposite (buy) signal occurs
+            if tx_signal == 1:
+                current_position = 0
+                current_bar_signal = 1 # Exit short
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            if tx_signal == 1:
+                current_position = 1
+                current_bar_signal = 1 # Entry long
+            elif tx_signal == -1:
+                current_position = -1
+                current_bar_signal = -1 # Entry short
+        
+        positions.append(current_position)
+        signals.append(current_bar_signal)
+
+    df_merged["position"] = positions
+    df_merged["signal"] = signals # Update the signal column to reflect entries/exits
+
+    return df_merged[["timestamp", "open", "high", "low", "close", "volume", "signal", "position"]]

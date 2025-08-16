@@ -44,56 +44,108 @@ def detect_ema_cross(df: pd.DataFrame, n1: int = 144, n2: int = 169) -> pd.DataF
     df[f'ema_{n2}'] = df['close'].ewm(span=n2, adjust=False).mean()
     df = df.dropna().reset_index(drop=True) # Ensure no NaN rows after EMA calculation
 
+    # Initialize signal and position columns
     df["signal"] = 0
+    df["position"] = 0
     df["signal_reason"] = ""
 
-    if len(df) < 2:
-        return df
+    current_position = 0 # Track current position (1: long, -1: short, 0: flat)
+    signals = []
+    positions = []
+    signal_reasons = []
 
-    # Iterate to check conditions for each point, or use vectorized operations if possible for efficiency
-    # For complex Vegas conditions, iteration might be clearer initially.
-    # We will apply the logic from telegram_message_bot.py.
+    for i in range(len(df)):
+        # Ensure enough data for indicators
+        if i < max(n1, n2): 
+            signals.append(0)
+            positions.append(0)
+            signal_reasons.append("")
+            continue
 
-    # Apply vectorized logic for efficiency
-    # Long Conditions
-    vegas_low_curr_long = df[[f'ema_{n1}', f'ema_{n2}']].min(axis=1)
-    vegas_high_curr_long = df[[f'ema_{n1}', f'ema_{n2}']].max(axis=1)
+        curr_close = df.loc[i, "close"]
+        curr_low = df.loc[i, "low"]
+        curr_high = df.loc[i, "high"]
+        curr_ema_n1 = df.loc[i, f'ema_{n1}']
+        curr_ema_n2 = df.loc[i, f'ema_{n2}']
 
-    breakout_long = (df['close'].shift(1) < vegas_low_curr_long.shift(1)) & \
-                    (df['close'] > vegas_high_curr_long)
-    
-    bounce_long = (df['close'].shift(1) > vegas_high_curr_long.shift(1)) & \
-                  (df['close'] > vegas_high_curr_long) & \
-                  ((df['low'].shift(1) <= vegas_high_curr_long.shift(1)) | (df['low'] <= vegas_high_curr_long)) # Corrected bounce logic
+        prev_close = df.loc[i-1, "close"]
+        prev_low = df.loc[i-1, "low"]
+        prev_high = df.loc[i-1, "high"]
+        prev_ema_n1 = df.loc[i-1, f'ema_{n1}']
+        prev_ema_n2 = df.loc[i-1, f'ema_{n2}']
 
-    # Short Conditions
-    vegas_low_curr_short = df[[f'ema_{n1}', f'ema_{n2}']].min(axis=1)
-    vegas_high_curr_short = df[[f'ema_{n1}', f'ema_{n2}']].max(axis=1)
+        vegas_low_curr = min(curr_ema_n1, curr_ema_n2)
+        vegas_high_curr = max(curr_ema_n1, curr_ema_n2)
+        vegas_low_prev = min(prev_ema_n1, prev_ema_n2)
+        vegas_high_prev = max(prev_ema_n1, prev_ema_n2)
 
-    breakdown_short = (df['close'].shift(1) > vegas_high_curr_short.shift(1)) & \
-                      (df['close'] < vegas_low_curr_short)
-    
-    fail_bounce_short = (df['close'].shift(1) < vegas_low_curr_short.shift(1)) & \
-                        (df['close'] < vegas_low_curr_short) & \
-                        ((df['high'].shift(1) >= vegas_low_curr_short.shift(1)) | (df['high'] >= vegas_low_curr_short)) # Corrected fail_bounce logic
+        current_bar_signal = 0
+        current_signal_reason = ""
 
-    # Assign signals based on conditions
-    df.loc[breakout_long, "signal"] = 1
-    df.loc[breakout_long, "signal_reason"] = "突破 (Breakout)"
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if close crosses below Vegas low
+            if curr_close < vegas_low_curr and prev_close >= vegas_low_prev:
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+                current_signal_reason = "平多 (Vegas Tunnel 下穿)"
+        elif current_position == -1: # Currently short
+            # Exit if close crosses above Vegas high
+            if curr_close > vegas_high_curr and prev_close <= vegas_high_prev:
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+                current_signal_reason = "平空 (Vegas Tunnel 上穿)"
 
-    df.loc[bounce_long, "signal"] = 1
-    df.loc[bounce_long, "signal_reason"] = "回踩反彈 (Bounce)"
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            # Long Conditions
+            breakout_long = (
+                (prev_close < vegas_low_prev) and 
+                (curr_close > vegas_high_curr)
+            )
+            
+            bounce_long = (
+                (prev_close > vegas_high_prev) and 
+                (curr_close > vegas_high_curr) and 
+                (min(curr_low, prev_low) <= vegas_high_curr) # Corrected bounce logic
+            )
 
-    df.loc[breakdown_short, "signal"] = -1
-    df.loc[breakdown_short, "signal_reason"] = "跌破 (Breakdown)"
+            # Short Conditions
+            breakdown_short = (
+                (prev_close > vegas_high_prev) and 
+                (curr_close < vegas_low_curr)
+            )
+            
+            fail_bounce_short = (
+                (prev_close < vegas_low_prev) and 
+                (curr_close < vegas_low_curr) and 
+                (max(curr_high, prev_high) >= vegas_low_curr) # Corrected fail_bounce logic
+            )
 
-    df.loc[fail_bounce_short, "signal"] = -1
-    df.loc[fail_bounce_short, "signal_reason"] = "反彈失敗 (Failed Bounce)"
+            if breakout_long:
+                current_position = 1
+                current_bar_signal = 1
+                current_signal_reason = "開多 (突破)"
+            elif bounce_long:
+                current_position = 1
+                current_bar_signal = 1
+                current_signal_reason = "開多 (回踩反彈)"
+            elif breakdown_short:
+                current_position = -1
+                current_bar_signal = -1
+                current_signal_reason = "開空 (跌破)"
+            elif fail_bounce_short:
+                current_position = -1
+                current_bar_signal = -1
+                current_signal_reason = "開空 (反彈失敗)"
+        
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+        signal_reasons.append(current_signal_reason)
 
-    # Prioritize signals if both long and short conditions are met (though unlikely for Vegas)
-    # For simplicity, if both are true for a row, the last assigned will stick or we can set a priority.
-    # In this case, we'll let them overwrite or add a check if both are true to pick one.
-    # For now, it's sequential.
+    df["signal"] = signals
+    df["position"] = positions
+    df["signal_reason"] = signal_reasons
 
     return df
 

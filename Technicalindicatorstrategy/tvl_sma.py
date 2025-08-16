@@ -85,6 +85,44 @@ def detect_divergence_signal(df: pd.DataFrame, price_col="close", tvl_col="tvl",
     df.loc[cond_sell, "signal"] = -1
     df.loc[cond_buy, "signal"] = 1
 
+    # Initialize position tracking
+    df["position"] = 0
+    current_position = 0
+    positions = []
+    signals = [] # To store the final signal (entry/exit)
+
+    # Iterate through the DataFrame to determine position
+    for i in range(len(df)):
+        current_bar_signal = 0
+        entry_signal = df.loc[i, "signal"]
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if a sell signal is generated or price makes a new high (divergence resolves)
+            if entry_signal == -1 or df.loc[i, price_col] == df.loc[i, "price_max"]:
+                current_position = 0
+                current_bar_signal = -1 # Exit long
+        elif current_position == -1: # Currently short
+            # Exit if a buy signal is generated or price makes a new low (divergence resolves)
+            if entry_signal == 1 or df.loc[i, price_col] == df.loc[i, "price_min"]:
+                current_position = 0
+                current_bar_signal = 1 # Exit short
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            if entry_signal == 1:
+                current_position = 1
+                current_bar_signal = 1 # Entry long
+            elif entry_signal == -1:
+                current_position = -1
+                current_bar_signal = -1 # Entry short
+        
+        positions.append(current_position)
+        signals.append(current_bar_signal)
+
+    df["signal"] = signals
+    df["position"] = positions
+
     # 清理中間欄位
     df.drop(columns=["price_max", "price_min", "tvl_max", "tvl_min"], inplace=True)
 

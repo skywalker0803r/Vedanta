@@ -27,9 +27,57 @@ def detect_ema_cross(df: pd.DataFrame, n1: int = 5, n2: int = 20) -> pd.DataFram
     df = df.copy()
     df["ema_1"] = df["close"].ewm(span=n1, adjust=False).mean()
     df["ema_2"] = df["close"].ewm(span=n2, adjust=False).mean()
+
+    # Initialize signal and position columns
     df["signal"] = 0
-    df.loc[(df["ema_1"] > df["ema_2"]) & (df["ema_1"].shift(1) <= df["ema_2"].shift(1)), "signal"] = 1
-    df.loc[(df["ema_1"] < df["ema_2"]) & (df["ema_1"].shift(1) >= df["ema_2"].shift(1)), "signal"] = -1
+    df["position"] = 0
+
+    current_position = 0 # Track current position (1: long, -1: short, 0: flat)
+    signals = []
+    positions = []
+
+    for i in range(len(df)):
+        # Ensure enough data for indicators
+        if i < n2: # Need enough bars for EMA calculation
+            signals.append(0)
+            positions.append(0)
+            continue
+
+        curr_ema1 = df.loc[i, "ema_1"]
+        curr_ema2 = df.loc[i, "ema_2"]
+        prev_ema1 = df.loc[i-1, "ema_1"]
+        prev_ema2 = df.loc[i-1, "ema_2"]
+
+        current_bar_signal = 0
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if EMA1 crosses below EMA2
+            if curr_ema1 < curr_ema2 and prev_ema1 >= prev_ema2:
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+        elif current_position == -1: # Currently short
+            # Exit if EMA1 crosses above EMA2
+            if curr_ema1 > curr_ema2 and prev_ema1 <= prev_ema2:
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            # Buy signal: EMA1 crosses above EMA2
+            if curr_ema1 > curr_ema2 and prev_ema1 <= prev_ema2:
+                current_position = 1
+                current_bar_signal = 1 # Entry long signal
+            # Sell signal: EMA1 crosses below EMA2
+            elif curr_ema1 < curr_ema2 and prev_ema1 >= prev_ema2:
+                current_position = -1
+                current_bar_signal = -1 # Entry short signal
+        
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+
+    df["signal"] = signals
+    df["position"] = positions
     return df
 
 

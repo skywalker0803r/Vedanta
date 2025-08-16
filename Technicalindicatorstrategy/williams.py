@@ -28,9 +28,55 @@ def detect_willr_signal(df: pd.DataFrame, period: int = 14, buy_threshold: float
     highest_high = df["high"].rolling(period).max()
     lowest_low = df["low"].rolling(period).min()
     df["%R"] = -100 * (highest_high - df["close"]) / (highest_high - lowest_low + 1e-9)
+
+    # Initialize signal and position columns
     df["signal"] = 0
-    df.loc[(df["%R"] > buy_threshold) & (df["%R"].shift(1) <= buy_threshold), "signal"] = 1
-    df.loc[(df["%R"] < sell_threshold) & (df["%R"].shift(1) >= sell_threshold), "signal"] = -1
+    df["position"] = 0
+
+    current_position = 0 # Track current position (1: long, -1: short, 0: flat)
+    signals = []
+    positions = []
+
+    for i in range(len(df)):
+        # Ensure enough data for indicators
+        if i < period: # Need enough bars for %R calculation
+            signals.append(0)
+            positions.append(0)
+            continue
+
+        curr_r = df.loc[i, "%R"]
+        prev_r = df.loc[i-1, "%R"]
+
+        current_bar_signal = 0
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if %R crosses below sell_threshold
+            if curr_r < sell_threshold and prev_r >= sell_threshold:
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+        elif current_position == -1: # Currently short
+            # Exit if %R crosses above buy_threshold
+            if curr_r > buy_threshold and prev_r <= buy_threshold:
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            # Buy signal: %R crosses above buy_threshold
+            if curr_r > buy_threshold and prev_r <= buy_threshold:
+                current_position = 1
+                current_bar_signal = 1 # Entry long signal
+            # Sell signal: %R crosses below sell_threshold
+            elif curr_r < sell_threshold and prev_r >= sell_threshold:
+                current_position = -1
+                current_bar_signal = -1 # Entry short signal
+        
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+
+    df["signal"] = signals
+    df["position"] = positions
     return df
 
 

@@ -126,6 +126,43 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300
         on="timestamp",
         direction="backward"
     )
-    print(merged)
 
-    return merged.fillna({"signal": 0})
+    # Initialize position tracking
+    current_position = 0
+    positions = []
+    signals = [] # To store the final signal (entry/exit)
+
+    # Iterate through the merged DataFrame to determine position
+    for i in range(len(merged)):
+        apy_signal = merged.loc[i, "signal"]
+        
+        current_bar_signal = 0
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if APY signal turns short (or becomes flat after a long signal)
+            if apy_signal == -1 or apy_signal == 0: # Assuming 0 means flat/no new signal, which can be an exit
+                current_position = 0
+                current_bar_signal = -1 # Exit long
+        elif current_position == -1: # Currently short
+            # Exit if APY signal turns long (or becomes flat after a short signal)
+            if apy_signal == 1 or apy_signal == 0: # Assuming 0 means flat/no new signal, which can be an exit
+                current_position = 0
+                current_bar_signal = 1 # Exit short
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            if apy_signal == 1:
+                current_position = 1
+                current_bar_signal = 1 # Entry long
+            elif apy_signal == -1:
+                current_position = -1
+                current_bar_signal = -1 # Entry short
+        
+        positions.append(current_position)
+        signals.append(current_bar_signal)
+
+    merged["position"] = positions
+    merged["signal"] = signals # Update the signal column to reflect entries/exits
+
+    return merged

@@ -89,46 +89,106 @@ def detect_vegas_signals(df: pd.DataFrame,
     df["adx"] = compute_adx(df, period=adx_period)
     df["rsi"] = compute_rsi(df, period=rsi_period)
 
+    # Initialize signal and position columns
     df["signal"] = 0
+    df["position"] = 0
     df["entry_price"] = np.nan
     df["tp1"] = np.nan
     df["tp2"] = np.nan
     df["tp3"] = np.nan
 
-    buy_condition = (
-        (df["close"].shift(1) > tunnel_low.shift(1)) &
-        (df["close"].shift(1) < tunnel_high.shift(1)) &
-        (df["close"] > tunnel_high) &
-        (df["adx"] > adx_threshold) &
-        (df["rsi"] > rsi_lower) & (df["rsi"] < rsi_upper)
-    )
+    current_position = 0 # Track current position (1: long, -1: short, 0: flat)
+    signals = []
+    positions = []
+    entry_prices = []
+    tp1s, tp2s, tp3s = [], [], []
 
-    sell_condition = (
-        (df["close"].shift(1) > tunnel_low.shift(1)) &
-        (df["close"].shift(1) < tunnel_high.shift(1)) &
-        (df["close"] < tunnel_low) &
-        (df["adx"] > adx_threshold) &
-        (df["rsi"] > rsi_lower) & (df["rsi"] < rsi_upper)
-    )
+    for i in range(len(df)):
+        # Ensure enough data for indicators
+        max_period = max(ema_1, ema_2, adx_period, rsi_period)
+        if i < max_period + 1: # +1 for shift operations
+            signals.append(0)
+            positions.append(0)
+            entry_prices.append(np.nan)
+            tp1s.append(np.nan)
+            tp2s.append(np.nan)
+            tp3s.append(np.nan)
+            continue
 
-    df.loc[buy_condition, "signal"] = 1
-    df.loc[sell_condition, "signal"] = -1
+        curr_close = df.loc[i, "close"]
+        curr_adx = df.loc[i, "adx"]
+        curr_rsi = df.loc[i, "rsi"]
+        curr_tunnel_low = df.loc[i, "tunnel_low"]
+        curr_tunnel_high = df.loc[i, "tunnel_high"]
 
-    for idx in df.index:
-        if df.at[idx, "signal"] == 1:
-            entry = df.at[idx, "close"]
-            width = tunnel_width.at[idx]
-            df.at[idx, "entry_price"] = entry
-            df.at[idx, "tp1"] = entry + width * fib_targets[0]
-            df.at[idx, "tp2"] = entry + width * fib_targets[1]
-            df.at[idx, "tp3"] = entry + width * fib_targets[2]
-        elif df.at[idx, "signal"] == -1:
-            entry = df.at[idx, "close"]
-            width = tunnel_width.at[idx]
-            df.at[idx, "entry_price"] = entry
-            df.at[idx, "tp1"] = entry - width * fib_targets[0]
-            df.at[idx, "tp2"] = entry - width * fib_targets[1]
-            df.at[idx, "tp3"] = entry - width * fib_targets[2]
+        prev_close = df.loc[i-1, "close"]
+        prev_tunnel_low = df.loc[i-1, "tunnel_low"]
+        prev_tunnel_high = df.loc[i-1, "tunnel_high"]
+
+        current_bar_signal = 0
+        current_entry_price = np.nan
+        current_tp1, current_tp2, current_tp3 = np.nan, np.nan, np.nan
+
+        # --- Exit Conditions ---
+        if current_position == 1: # Currently long
+            # Exit if price crosses below tunnel_low OR ADX drops below threshold
+            if (curr_close < curr_tunnel_low and prev_close >= prev_tunnel_low) or curr_adx < adx_threshold:
+                current_position = 0
+                current_bar_signal = -1 # Exit long signal
+        elif current_position == -1: # Currently short
+            # Exit if price crosses above tunnel_high OR ADX drops below threshold
+            if (curr_close > curr_tunnel_high and prev_close <= prev_tunnel_high) or curr_adx < adx_threshold:
+                current_position = 0
+                current_bar_signal = 1 # Exit short signal
+
+        # --- Entry Conditions ---
+        if current_position == 0: # Only enter if currently flat
+            buy_condition = (
+                (prev_close > prev_tunnel_low) and
+                (prev_close < prev_tunnel_high) and
+                (curr_close > curr_tunnel_high) and
+                (curr_adx > adx_threshold) and
+                (curr_rsi > rsi_lower) and (curr_rsi < rsi_upper)
+            )
+
+            sell_condition = (
+                (prev_close > prev_tunnel_low) and
+                (prev_close < prev_tunnel_high) and
+                (curr_close < curr_tunnel_low) and
+                (curr_adx > adx_threshold) and
+                (curr_rsi > rsi_lower) and (curr_rsi < rsi_upper)
+            )
+
+            if buy_condition:
+                current_position = 1
+                current_bar_signal = 1 # Entry long signal
+                current_entry_price = curr_close
+                width = curr_tunnel_high - curr_tunnel_low
+                current_tp1 = current_entry_price + width * fib_targets[0]
+                current_tp2 = current_entry_price + width * fib_targets[1]
+                current_tp3 = current_entry_price + width * fib_targets[2]
+            elif sell_condition:
+                current_position = -1
+                current_bar_signal = -1 # Entry short signal
+                current_entry_price = curr_close
+                width = curr_tunnel_high - curr_tunnel_low
+                current_tp1 = current_entry_price - width * fib_targets[0]
+                current_tp2 = current_entry_price - width * fib_targets[1]
+                current_tp3 = current_entry_price - width * fib_targets[2]
+        
+        signals.append(current_bar_signal)
+        positions.append(current_position)
+        entry_prices.append(current_entry_price)
+        tp1s.append(current_tp1)
+        tp2s.append(current_tp2)
+        tp3s.append(current_tp3)
+
+    df["signal"] = signals
+    df["position"] = positions
+    df["entry_price"] = entry_prices
+    df["tp1"] = tp1s
+    df["tp2"] = tp2s
+    df["tp3"] = tp3s
 
     return df
 
