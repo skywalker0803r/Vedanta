@@ -94,6 +94,7 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
     positions = []
     entry_prices = []
     stop_losses = []
+    reasons = [] # 新增原因欄位
 
     for i in range(len(df)):
         # 需等待足夠的 K 棒來計算所有指標 (EMA 至少需要26期)
@@ -102,6 +103,7 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
             positions.append(0)
             entry_prices.append(np.nan)
             stop_losses.append(np.nan)
+            reasons.append("") # 初始狀態無原因
             continue
 
         current_close = df.loc[i, 'close']
@@ -111,22 +113,37 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
         macd_hist = df.loc[i, 'MACDh']
         
         current_signal = 0
+        current_reason = ""
 
         # --- 判斷出場 ---
         if position == 1:  # 多單持倉
             # 柱狀體反轉向下或觸發停損
-            if macd_hist < prev_macd_hist or current_close < stop_loss:
+            if macd_hist < prev_macd_hist:
                 position = 0
                 entry_price = np.nan
                 stop_loss = np.nan
                 current_signal = -1  # 訊號改為 -1，代表平倉
+                current_reason = "多單平倉"
+            elif current_close < stop_loss:
+                position = 0
+                entry_price = np.nan
+                stop_loss = np.nan
+                current_signal = -1  # 訊號改為 -1，代表平倉
+                current_reason = "多單平倉"
         elif position == -1:  # 空單持倉
             # 柱狀體反轉向上或觸發停損
-            if macd_hist > prev_macd_hist or current_close > stop_loss:
+            if macd_hist > prev_macd_hist:
                 position = 0
                 entry_price = np.nan
                 stop_loss = np.nan
                 current_signal = 1  # 訊號改為 1，代表平倉
+                current_reason = "空單平倉"
+            elif current_close > stop_loss:
+                position = 0
+                entry_price = np.nan
+                stop_loss = np.nan
+                current_signal = 1  # 訊號改為 1，代表平倉
+                current_reason = "空單平倉"
 
         # --- 判斷進場 ---
         if position == 0 and current_signal == 0:
@@ -135,11 +152,13 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
                 entry_price = current_close
                 stop_loss = entry_price - 2 * atr
                 current_signal = 1  # 訊號改為 1，代表開多
+                current_reason = "多單進場"
             elif current_close < low_20:  # 跌破 20 日低
                 position = -1
                 entry_price = current_close
                 stop_loss = entry_price + 2 * atr
                 current_signal = -1  # 訊號改為 -1，代表開空
+                current_reason = "空單進場"
         
         # 更新 MACD 柱狀體的前一個值
         prev_macd_hist = macd_hist
@@ -148,11 +167,13 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
         positions.append(position)
         entry_prices.append(entry_price)
         stop_losses.append(stop_loss)
+        reasons.append(current_reason)
 
     df['position'] = positions
     df['entry_price'] = entry_prices
     df['stop_loss'] = stop_losses
     df['signal'] = signals
+    df['reason'] = reasons # 將原因欄位加入回傳的 DataFrame
     return df
 
 if __name__ == "__main__":
