@@ -75,9 +75,13 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
     df['ema169'] = df['close'].ewm(span=169, adjust=False).mean()
 
     # 初始化訊號欄位
+    # 初始化訊號和倉位欄位
     df["signal"] = 0
+    df["position"] = 0  # 新增 position 欄位
     df["long_type"] = ""
     df["short_type"] = ""
+
+    current_position = 0 # 追蹤當前倉位
 
     for i in range(1, len(df)):
         prev = df.iloc[i - 1]
@@ -114,22 +118,42 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
             curr['ema12'] < vegas_low
         )
 
-        if is_breakout:
-            df.at[i, "signal"] = 1
-            df.at[i, "long_type"] = "突破"
-        elif is_bounce:
-            df.at[i, "signal"] = 1
-            df.at[i, "long_type"] = "回踩反彈"
-        elif is_breakdown:
-            df.at[i, "signal"] = -1
-            df.at[i, "short_type"] = "跌破"
-        elif is_failed_bounce:
-            df.at[i, "signal"] = -1
-            df.at[i, "short_type"] = "反彈失敗"
+        # --- 判斷出場 ---
+        if current_position == 1: # 持有多單
+            # 價格跌破 Vegas Tunnel
+            if curr['close'] < vegas_low:
+                df.at[i, "signal"] = -1 # 平多訊號
+                current_position = 0
+        elif current_position == -1: # 持有空單
+            # 價格漲破 Vegas Tunnel
+            if curr['close'] > vegas_high:
+                df.at[i, "signal"] = 1 # 平空訊號
+                current_position = 0
+
+        # --- 判斷進場 (只有在目前沒有倉位時才考慮進場) ---
+        if current_position == 0:
+            if is_breakout:
+                df.at[i, "signal"] = 1
+                df.at[i, "long_type"] = "突破"
+                current_position = 1
+            elif is_bounce:
+                df.at[i, "signal"] = 1
+                df.at[i, "long_type"] = "回踩反彈"
+                current_position = 1
+            elif is_breakdown:
+                df.at[i, "signal"] = -1
+                df.at[i, "short_type"] = "跌破"
+                current_position = -1
+            elif is_failed_bounce:
+                df.at[i, "signal"] = -1
+                df.at[i, "short_type"] = "反彈失敗"
+                current_position = -1
+        
+        df.at[i, "position"] = current_position # 更新當前 K 棒的倉位
 
     return df[[
         "timestamp", "open", "high", "low", "close",
-        "ema12", "ema144", "ema169", "signal", "long_type", "short_type"
+        "ema12", "ema144", "ema169", "signal", "position", "long_type", "short_type"
     ]]
 
 # 測試範例
