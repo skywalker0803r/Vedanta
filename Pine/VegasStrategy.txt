@@ -1,0 +1,59 @@
+//@version=5
+strategy("Vegas Tunnel Strategy",
+     overlay=true,
+     margin_long=10,
+     margin_short=10,
+     process_orders_on_close=true, // Orders processed at the close of the bar
+     default_qty_type=strategy.percent_of_equity,
+     default_qty_value=100) // 100% of equity, effectively 10x position due to margin
+
+// === Parameters ===
+ema12Length  = input.int(12, "EMA 12 Length")
+ema144Length = input.int(144, "EMA 144 Length")
+ema169Length = input.int(169, "EMA 169 Length")
+
+// === Calculate EMAs ===
+ema12  = ta.ema(close, ema12Length)
+ema144 = ta.ema(close, ema144Length)
+ema169 = ta.ema(close, ema169Length)
+
+// === Vegas Tunnel ===
+vegasLow  = math.min(ema144, ema169)
+vegasHigh = math.max(ema144, ema169)
+
+// === Entry Conditions ===
+// Use [1] to refer to previous bar's values for consistency with Python's prev[]
+isBreakout = (close[1] < vegasLow[1]) and (close > vegasHigh) and (ema12 > vegasHigh)
+isBounce   = (close[1] > vegasHigh[1]) and (close > vegasHigh) and (math.min(low, low[1]) <= vegasHigh) and (ema12 > vegasHigh)
+
+isBreakdown = (close[1] > vegasHigh[1]) and (close < vegasLow) and (ema12 < vegasLow)
+isFailedBounce = (close[1] < vegasLow[1]) and (close < vegasLow) and (math.max(high, high[1]) >= vegasLow) and (ema12 < vegasLow)
+
+// === Exit Conditions ===
+// Exit long if price crosses below Vegas Low
+longExitCondition = strategy.position_size > 0 and (close < vegasLow)
+
+// Exit short if price crosses above Vegas High
+shortExitCondition = strategy.position_size < 0 and (close > vegasHigh)
+
+// === Execute Trades ===
+// Exit trades first
+if longExitCondition
+    strategy.close("Long", comment="平多")
+
+if shortExitCondition
+    strategy.close("Short", comment="平空")
+
+// Enter trades only if currently flat
+if strategy.position_size == 0
+    if isBreakout or isBounce
+        strategy.entry("Long", strategy.long, comment="開多")
+    else if isBreakdown or isFailedBounce
+        strategy.entry("Short", strategy.short, comment="開空")
+
+// === Plotting for Visualization ===
+plot(ema12,  "EMA 12",  color=color.blue)
+plot(ema144, "EMA 144", color=color.green)
+plot(ema169, "EMA 169", color=color.red)
+plot(vegasLow,  "Vegas Low",  color=color.purple, style=plot.style.stepline)
+plot(vegasHigh, "Vegas High", color=color.orange, style=plot.style.stepline)
