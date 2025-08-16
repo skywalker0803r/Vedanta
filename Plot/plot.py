@@ -40,9 +40,25 @@ def plot_backtest_result(result, max_trades_to_draw=10, max_points=3000):
     fig, axs = plt.subplots(3, 1, figsize=(10, 10), gridspec_kw={"height_ratios": [2.5, 2, 1]})
 
     # === [1] Equity Curve ===
-    axs[0].plot(timestamp_ds, equity_pct, label="Strategy Return (%)", color="blue", linewidth=2)
-    axs[0].plot(timestamp_ds, buy_and_hold_pct, label="Buy and Hold (%)", linestyle="--", alpha=0.7, color="orange")
-    axs[0].axvspan(timestamp_ds[peak_idx], timestamp_ds[min_dd_idx], color='red', alpha=0.1, label='Max Drawdown')
+    # === [1] Equity Curve ===
+    # Conditional coloring for Strategy Return
+    axs[0].plot(timestamp_ds, buy_and_hold_pct, label="Buy and Hold (%)", linestyle="--", alpha=0.7, color="blue")
+
+    # Plot strategy equity curve with conditional coloring and fill
+    # Find points where equity crosses the 0-axis
+    above_zero = equity_pct >= 0
+    below_zero = equity_pct < 0
+
+    # Plot green line and fill for positive equity
+    axs[0].plot(timestamp_ds[above_zero], equity_pct[above_zero], label="Strategy Return (%)", color="green", linewidth=2)
+    axs[0].fill_between(timestamp_ds, 0, equity_pct, where=above_zero, facecolor='green', alpha=0.1)
+
+    # Plot red line and fill for negative equity
+    axs[0].plot(timestamp_ds[below_zero], equity_pct[below_zero], color="red", linewidth=2)
+    axs[0].fill_between(timestamp_ds, 0, equity_pct, where=below_zero, facecolor='red', alpha=0.1)
+
+    # Draw a horizontal line at 0 for reference
+    axs[0].axhline(0, color='gray', linestyle='--', linewidth=0.8)
 
     axs[0].set_title("Equity Curve (%)")
     axs[0].set_ylabel("Return (%)")
