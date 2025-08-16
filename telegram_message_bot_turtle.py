@@ -3,7 +3,7 @@ import pandas as pd
 import time
 import requests
 import os
-from Technicalindicatorstrategy import turtle_strategy
+from Technicalindicatorstrategy import turtle_strategy_filter
 from datetime import datetime
 from dotenv import load_dotenv
 load_dotenv()
@@ -49,7 +49,7 @@ def main():
     for symbol in top_symbols:
         print(f"分析 {symbol}...")
         try:
-            result = turtle_strategy.get_signals(symbol=symbol, interval='1h', end_time=datetime.now(), limit = 1000).tail(1)
+            result = turtle_strategy_filter.get_signals(symbol=symbol, interval='1h', end_time=datetime.now(), limit = 1000).tail(1)
             if result["signal"].values[0] == 1:
                 print(f"{symbol} 多單訊號 - 海龜多單")
                 long_symbols.append(f"{symbol} (海龜多單)")

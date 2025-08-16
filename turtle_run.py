@@ -1,5 +1,5 @@
 from online.auto_trade_future import auto_trade_futures
-from Technicalindicatorstrategy import turtle_strategy
+from Technicalindicatorstrategy import turtle_strategy_filter
 
 # 1
 auto_trade_futures(
@@ -7,7 +7,7 @@ auto_trade_futures(
     interval="1h",#週期
     usdt_percent_per_order=0.1,# 每次使用的資金佔比
     leverage=1,#槓桿
-    strategy=turtle_strategy,# 策略
+    strategy=turtle_strategy_filter,# 策略
     stop_loss = 0.05,       # 停損閾值，例如0.05代表5%
     take_profit = 0.18,     # 停利閾值
     max_hold_bars=100000,# 最大持有K棒數
@@ -20,7 +20,7 @@ auto_trade_futures(
     interval="1h",#週期
     usdt_percent_per_order=0.1,# 每次使用的資金佔比
     leverage=1,#槓桿
-    strategy=turtle_strategy,# 策略
+    strategy=turtle_strategy_filter,# 策略
     stop_loss = 0.05,       # 停損閾值，例如0.05代表5%
     take_profit = 0.18,     # 停利閾值
     max_hold_bars=100000,# 最大持有K棒數
@@ -33,7 +33,35 @@ auto_trade_futures(
     interval="1h",#週期
     usdt_percent_per_order=0.1,# 每次使用的資金佔比
     leverage=1,#槓桿
-    strategy=turtle_strategy,# 策略
+    strategy=turtle_strategy_filter,# 策略
+    stop_loss = 0.05,       # 停損閾值，例如0.05代表5%
+    take_profit = 0.18,     # 停利閾值
+    max_hold_bars=100000,# 最大持有K棒數
+    run_once=True #單次執行模式
+)
+
+
+# 4
+auto_trade_futures(
+    symbol="BNB/USDT",#幣種
+    interval="1h",#週期
+    usdt_percent_per_order=0.1,# 每次使用的資金佔比
+    leverage=1,#槓桿
+    strategy=turtle_strategy_filter,# 策略
+    stop_loss = 0.05,       # 停損閾值，例如0.05代表5%
+    take_profit = 0.18,     # 停利閾值
+    max_hold_bars=100000,# 最大持有K棒數
+    run_once=True #單次執行模式
+)
+
+
+# 5
+auto_trade_futures(
+    symbol="ADA/USDT",#幣種
+    interval="1h",#週期
+    usdt_percent_per_order=0.1,# 每次使用的資金佔比
+    leverage=1,#槓桿
+    strategy=turtle_strategy_filter,# 策略
     stop_loss = 0.05,       # 停損閾值，例如0.05代表5%
     take_profit = 0.18,     # 停利閾值
     max_hold_bars=100000,# 最大持有K棒數
