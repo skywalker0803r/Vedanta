@@ -304,22 +304,32 @@ def backtest_signals(df: pd.DataFrame,
     max_dd = df['drawdown'].min()
     wins = [r for r in trade_returns if r > 0]
     losses = [r for r in trade_returns if r <= 0]
+    
+    # Calculate metrics for USDT
+    trade_pnls_usdt = [float(trade['P&L (USDT)'].replace(',', '')) for trade in trades_log if 'Open' not in trade['Date/Time (Exit)'] ]
+    net_profit_usdt = sum(trade_pnls_usdt)
+    gross_profit_usdt = sum(pnl for pnl in trade_pnls_usdt if pnl > 0)
+    gross_loss_usdt = sum(pnl for pnl in trade_pnls_usdt if pnl <= 0)
+    
+    if abs(gross_loss_usdt) < 1e-9: # Avoid division by zero
+        profit_factor = np.inf
+    else:
+        profit_factor = gross_profit_usdt / abs(gross_loss_usdt)
+
+    buy_and_hold_return = (df['buy_and_hold'].iloc[-1] / initial_capital - 1) * 100
 
     return {
         'metric': {
-            '回測K棒數量': len(df),
-            '總報酬率': f'{total_return * 100:.2f}',
-            '日報酬率': f'{daily_return * 100:.4f}',
-            '最大回撤': f'{max_dd * 100:.2f}',
-            '交易次數': len(trade_returns),
-            '勝率': f'{(np.mean([r > 0 for r in trade_returns]) * 100):.2f}' if trade_returns else '0.00',
-            '平均每筆報酬率': f'{np.mean(trade_returns) * 100:.2f}' if trade_returns else '0.00',
-            '平均獲利時報酬': f'{np.mean(wins) * 100:.2f}' if wins else '0.00',
-            '平均虧損時報酬': f'{np.mean(losses) * 100:.2f}' if losses else '0.00',
-            '盈虧比': f'{(np.mean(wins) / abs(np.mean(losses))):.2f}' if wins and losses and np.mean(losses) != 0 else 'N/A',
-            '最大單筆報酬': f'{np.max(trade_returns) * 100:.2f}' if trade_returns else '0.00',
-            '最大單筆虧損': f'{np.min(trade_returns) * 100:.2f}' if trade_returns else '0.00',
-            '平均持有K棒數': f'{np.mean(hold_bars):.2f}' if hold_bars else '0.00',
+            'Net Profit (%)': f'{(net_profit_usdt / initial_capital) * 100:,.2f}%',
+            'Total Closed Trades': len(trade_returns),
+            'Percent Profitable': f'{(np.mean([r > 0 for r in trade_returns]) * 100):.2f}%' if trade_returns else '0.00%',
+            'Profit Factor': f'{profit_factor:.2f}',
+            'Max Drawdown': f'{max_dd * 100:.2f}%',
+            'Avg Trade': f'{np.mean(trade_returns) * 100:.2f}%' if trade_returns else '0.00%',
+            'Avg Win Trade': f'{np.mean(wins) * 100:.2f}%' if wins else '0.00%',
+            'Avg Loss Trade': f'{np.mean(losses) * 100:.2f}%' if losses else '0.00%',
+            'Avg Bars in Trade': f'{np.mean(hold_bars):.2f}' if hold_bars else '0.00',
+            'Buy & Hold Return': f'{buy_and_hold_return:.2f}%',
         },
         'fig': {
             'timestamp': df['timestamp'].tolist(),
