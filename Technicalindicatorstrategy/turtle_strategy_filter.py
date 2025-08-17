@@ -5,7 +5,10 @@ import numpy as np
 import time
 
 def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limit: int = 1000) -> pd.DataFrame:
-    time.sleep(1)
+    import time
+    import requests
+    import pandas as pd
+
     base_url = "https://api.binance.com/api/v3/klines"
     all_data = []
     end_timestamp = int(end_time.timestamp() * 1000)
@@ -27,9 +30,11 @@ def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limi
         if not data:
             break
 
-        all_data = data + all_data
+        all_data = data + all_data  # prepend older data
         end_timestamp = data[0][0] - 1
         remaining -= len(data)
+
+        time.sleep(0.5)  # sleep after request to avoid rate limits
 
     if not all_data:
         raise ValueError("No data fetched")
@@ -40,7 +45,8 @@ def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limi
         "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore"
     ])
 
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    # 轉成 UTC 時區
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True).dt.tz_convert("Asia/Taipei")
     df[["open", "high", "low", "close"]] = df[["open", "high", "low", "close"]].astype(float)
     df = df.drop_duplicates(subset="timestamp").sort_values("timestamp").reset_index(drop=True)
     return df[["timestamp", "open", "high", "low", "close"]]
