@@ -92,6 +92,10 @@ def backtest_signals(df: pd.DataFrame,
         if entry_position != 0:
             holding_period = i - entry_index
 
+            # Update max/min price during hold
+            max_price_during_hold = max(max_price_during_hold, high_)
+            min_price_during_hold = min(min_price_during_hold, low_)
+
             # --- 計算止盈/止損價格 ---
             sl_price_long = entry_price * (1 - stop_loss) if stop_loss is not None else None
             tp_price_long = entry_price * (1 + take_profit) if take_profit is not None else None
@@ -154,8 +158,12 @@ def backtest_signals(df: pd.DataFrame,
 
                 if entry_position > 0: # 多單
                     rtn = (exit_price / entry_price - 1) * leverage
+                    run_up_pct = (max_price_during_hold / entry_price - 1) * leverage * 100
+                    draw_down_pct = (min_price_during_hold / entry_price - 1) * leverage * 100
                 else: # 空單
                     rtn = (entry_price / exit_price - 1) * leverage
+                    run_up_pct = (entry_price / min_price_during_hold - 1) * leverage * 100
+                    draw_down_pct = (entry_price / max_price_during_hold - 1) * leverage * 100
 
                 profit = capital_used * rtn
 
@@ -164,6 +172,8 @@ def backtest_signals(df: pd.DataFrame,
                     current_equity -= loss
                     rtn = -liquidation_penalty
                     exit_reason = 'Liquidated'
+                    run_up_pct = 0 # Reset if liquidated
+                    draw_down_pct = -100 # Reset if liquidated
                 else:
                     current_equity += profit
 
@@ -172,6 +182,7 @@ def backtest_signals(df: pd.DataFrame,
                 # Calculate P&L (USDT)
                 pnl_usdt = capital_used * rtn
                 cumulative_pnl_usdt += pnl_usdt # Update cumulative P&L
+                cumulative_pnl_pct = (cumulative_pnl_usdt / initial_capital) * 100 # Calculate cumulative P&L %
 
                 # Determine Type
                 trade_type = 'Long' if entry_position > 0 else 'Short'
@@ -202,18 +213,26 @@ def backtest_signals(df: pd.DataFrame,
                     'Position size': f'{position_size:,.2f}',
                     'P&L (USDT)': f'{pnl_usdt:,.2f}',
                     'P&L (%)': f'{rtn * 100:,.2f}%',
+                    'Run-up (%)': f'{run_up_pct:,.2f}%', # New
+                    'Drawdown (%)': f'{draw_down_pct:,.2f}%', # New
                     'Cumulative P&L': f'{cumulative_pnl_usdt:,.2f}',
+                    'Cumulative P&L (%)': f'{cumulative_pnl_pct:,.2f}%', # New
                 })
 
                 entry_price = None
                 entry_index = None
                 entry_position = 0
+                max_price_during_hold = -np.inf # Reset for next trade
+                min_price_during_hold = np.inf # Reset for next trade
 
         # ===== 進場判斷 =====
         if entry_position == 0 and target_position != 0:
             entry_price = open_ * (1 + fee_rate) * buy_slip if target_position > 0 else open_ * (1 - fee_rate) * sell_slip
             entry_index = i
             entry_position = target_position
+            # Initialize for new trade
+            max_price_during_hold = high_
+            min_price_during_hold = low_
 
         equity_curve.append(current_equity)
 
@@ -223,9 +242,13 @@ def backtest_signals(df: pd.DataFrame,
         if entry_position > 0:
             final_price *= (1 - fee_rate) * (1 - np.random.uniform(0, slippage_rate))
             rtn = (final_price / entry_price - 1) * leverage
+            run_up_pct = (max_price_during_hold / entry_price - 1) * leverage * 100
+            draw_down_pct = (min_price_during_hold / entry_price - 1) * leverage * 100
         else:
             final_price *= (1 + fee_rate) * (1 + np.random.uniform(0, slippage_rate))
             rtn = (entry_price / final_price - 1) * leverage
+            run_up_pct = (entry_price / min_price_during_hold - 1) * leverage * 100
+            draw_down_pct = (entry_price / max_price_during_hold - 1) * leverage * 100
 
         capital_used = current_equity * capital_ratio
         maintenance_margin = capital_used * maintenance_margin_ratio
@@ -236,6 +259,8 @@ def backtest_signals(df: pd.DataFrame,
             current_equity -= loss
             rtn = -liquidation_penalty
             exit_reason = 'Final Liquidated'
+            run_up_pct = 0 # Reset if liquidated
+            draw_down_pct = -100 # Reset if liquidated
         else:
             current_equity += profit
             exit_reason = 'Final Force Exit'
@@ -245,6 +270,7 @@ def backtest_signals(df: pd.DataFrame,
         # Calculate P&L (USDT)
         pnl_usdt = capital_used * rtn
         cumulative_pnl_usdt += pnl_usdt # Update cumulative P&L
+        cumulative_pnl_pct = (cumulative_pnl_usdt / initial_capital) * 100 # Calculate cumulative P&L %
 
         # Determine Type
         trade_type = 'Long' if entry_position > 0 else 'Short'
@@ -275,7 +301,10 @@ def backtest_signals(df: pd.DataFrame,
             'Position size': f'{position_size:,.2f}',
             'P&L (USDT)': f'{pnl_usdt:,.2f}',
             'P&L (%)': f'{rtn * 100:,.2f}%',
+            'Run-up (%)': f'{run_up_pct:,.2f}%', # New
+            'Drawdown (%)': f'{draw_down_pct:,.2f}%', # New
             'Cumulative P&L': f'{cumulative_pnl_usdt:,.2f}',
+            'Cumulative P&L (%)': f'{cumulative_pnl_pct:,.2f}%', # New
         })
 
         equity_curve[-1] = current_equity

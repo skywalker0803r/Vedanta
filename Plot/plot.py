@@ -169,6 +169,8 @@ def display_trades_log_as_html(trades_log):
           <th>Price</th>
           <th>Position size</th>
           <th>P&L</th>
+          <th>Run-up</th>
+          <th>Drawdown</th>
           <th>Cumulative P&L</th>
         </tr>
       </thead>
@@ -185,6 +187,22 @@ def display_trades_log_as_html(trades_log):
         pnl_class = "positive-value" if pnl_usdt >= 0 else "negative-value"
         pnl_text = f"<div>{trade['P&L (USDT)']} usdt</div><div>{trade['P&L (%)']}</div>"
 
+        # Run-up formatting
+        run_up_pct = float(trade['Run-up (%)'].replace('%', '').replace(',', ''))
+        run_up_class = "positive-value" if run_up_pct >= 0 else "negative-value" # Drawdown is usually negative, so positive value means less negative
+        run_up_text = f"<div>{trade['Run-up (%)']}</div>"
+
+        # Drawdown formatting
+        draw_down_pct = float(trade['Drawdown (%)'].replace('%', '').replace(',', ''))
+        draw_down_class = "positive-value" if draw_down_pct >= 0 else "negative-value" # Drawdown is usually negative, so positive value means less negative
+        draw_down_text = f"<div>{trade['Drawdown (%)']}</div>"
+
+        # Cumulative P&L formatting
+        cumulative_pnl_usdt = float(trade['Cumulative P&L'].replace(',', ''))
+        cumulative_pnl_class = "positive-value" if cumulative_pnl_usdt >= 0 else "negative-value"
+        cumulative_pnl_text = f"<div>{trade['Cumulative P&L']} usdt</div><div>{trade['Cumulative P&L (%)']}</div>"
+
+
         html_output += f"""
         <tr>
           <td rowspan="2" class="{trade_type_class} merged-cell">{trade_type_text}</td>
@@ -198,8 +216,14 @@ def display_trades_log_as_html(trades_log):
           <td rowspan="2" class="{pnl_class}">
             {pnl_text}
           </td>
-          <td rowspan="2" class="positive-value">
-            <div>{trade['Cumulative P&L']} usdt</div>
+          <td rowspan="2" class="{run_up_class}">
+            {run_up_text}
+          </td>
+          <td rowspan="2" class="{draw_down_class}">
+            {draw_down_text}
+          </td>
+          <td rowspan="2" class="{cumulative_pnl_class}">
+            {cumulative_pnl_text}
           </td>
         </tr>
         <tr>
@@ -209,7 +233,7 @@ def display_trades_log_as_html(trades_log):
           <td style="border-top: 1px solid #333;">{trade['Price (Entry)']} usdt</td>
         </tr>
         <tr>
-          <td colspan="8" style="padding: 0; height: 20px;"></td>
+          <td colspan="10" style="padding: 0; height: 20px;"></td>
         </tr>
         """
     html_output += """
