@@ -236,78 +236,48 @@ def backtest_signals(df: pd.DataFrame,
 
         equity_curve.append(current_equity)
 
-    # ===== 最後強制平倉 =====
+    # If there's an open position at the end, log it as an open trade
     if entry_position != 0:
-        final_price = df.iloc[-1]['open']
-        if entry_position > 0:
-            final_price *= (1 - fee_rate) * (1 - np.random.uniform(0, slippage_rate))
-            rtn = (final_price / entry_price - 1) * leverage
-            run_up_pct = (max_price_during_hold / entry_price - 1) * leverage * 100
-            draw_down_pct = (min_price_during_hold / entry_price - 1) * leverage * 100
-        else:
-            final_price *= (1 + fee_rate) * (1 + np.random.uniform(0, slippage_rate))
-            rtn = (entry_price / final_price - 1) * leverage
-            run_up_pct = (entry_price / min_price_during_hold - 1) * leverage * 100
-            draw_down_pct = (entry_price / max_price_during_hold - 1) * leverage * 100
+        # Calculate unrealized P&L for the open position
+        current_price = df.iloc[-1]['close'] # Use close price for unrealized P&L
+        unrealized_rtn = 0
+        unrealized_pnl_usdt = 0
+        unrealized_run_up_pct = 0
+        unrealized_draw_down_pct = 0
 
         capital_used = current_equity * capital_ratio
-        maintenance_margin = capital_used * maintenance_margin_ratio
-        profit = capital_used * rtn
-
-        if current_equity + profit < maintenance_margin:
-            loss = capital_used * liquidation_penalty
-            current_equity -= loss
-            rtn = -liquidation_penalty
-            exit_reason = 'Final Liquidated'
-            run_up_pct = 0 # Reset if liquidated
-            draw_down_pct = -100 # Reset if liquidated
-        else:
-            current_equity += profit
-            exit_reason = 'Final Force Exit'
-
-        trade_returns.append(rtn)
-        hold_bars.append(len(df) - entry_index)
-        # Calculate P&L (USDT)
-        pnl_usdt = capital_used * rtn
-        cumulative_pnl_usdt += pnl_usdt # Update cumulative P&L
-        cumulative_pnl_pct = (cumulative_pnl_usdt / initial_capital) * 100 # Calculate cumulative P&L %
-
-        # Determine Type
-        trade_type = 'Long' if entry_position > 0 else 'Short'
-
-        # Determine Signal (Entry)
-        signal_entry = '多單開倉' if entry_position > 0 else '空單開倉'
-
-        # Determine Signal (Exit)
-        signal_exit = ''
-        if exit_reason == 'Liquidated' or exit_reason == 'Final Liquidated':
-            signal_exit = 'Margin call'
-        elif entry_position > 0: # Long exit
-            signal_exit = '多單平倉'
-        else: # Short exit
-            signal_exit = '空單平倉'
-
-        # Calculate Position Size
         position_size = capital_used * leverage
+
+        if entry_position > 0: # Long position
+            unrealized_rtn = (current_price / entry_price - 1) * leverage
+            unrealized_run_up_pct = (max_price_during_hold / entry_price - 1) * leverage * 100
+            unrealized_draw_down_pct = (min_price_during_hold / entry_price - 1) * leverage * 100
+        else: # Short position
+            unrealized_rtn = (entry_price / current_price - 1) * leverage
+            unrealized_run_up_pct = (entry_price / min_price_during_hold - 1) * leverage * 100
+            unrealized_draw_down_pct = (entry_price / max_price_during_hold - 1) * leverage * 100
+        
+        unrealized_pnl_usdt = capital_used * unrealized_rtn
+
+        trade_type = 'Long' if entry_position > 0 else 'Short'
+        signal_entry = '多單開倉' if entry_position > 0 else '空單開倉'
 
         trades_log.append({
             'Type': trade_type,
             'Date/Time (Entry)': df.iloc[entry_index]['timestamp'].strftime('%Y/%m/%d, %H:%M'),
-            'Date/Time (Exit)': df.iloc[-1]['timestamp'].strftime('%Y/%m/%d, %H:%M'),
+            'Date/Time (Exit)': 'Open', # Indicate open position
             'Signal (Entry)': signal_entry,
-            'Signal (Exit)': signal_exit,
+            'Signal (Exit)': 'Open', # Indicate open position
             'Price (Entry)': f'{entry_price:,.2f}',
-            'Price (Exit)': f'{final_price:,.2f}',
+            'Price (Exit)': f'{current_price:,.2f}', # Current price for open position
             'Position size': f'{position_size:,.2f}',
-            'P&L (USDT)': f'{pnl_usdt:,.2f}',
-            'P&L (%)': f'{rtn * 100:,.2f}%',
-            'Run-up (%)': f'{run_up_pct:,.2f}%', # New
-            'Drawdown (%)': f'{draw_down_pct:,.2f}%', # New
-            'Cumulative P&L': f'{cumulative_pnl_usdt:,.2f}',
-            'Cumulative P&L (%)': f'{cumulative_pnl_pct:,.2f}%', # New
+            'P&L (USDT)': f'{unrealized_pnl_usdt:,.2f}', # Unrealized P&L
+            'P&L (%)': f'{unrealized_rtn * 100:,.2f}%', # Unrealized P&L %
+            'Run-up (%)': f'{unrealized_run_up_pct:,.2f}%',
+            'Drawdown (%)': f'{unrealized_draw_down_pct:,.2f}%',
+            'Cumulative P&L': f'{cumulative_pnl_usdt:,.2f}', # Cumulative P&L up to this point
+            'Cumulative P&L (%)': f'{cumulative_pnl_pct:,.2f}%', # Cumulative P&L % up to this point
         })
-
-        equity_curve[-1] = current_equity
 
     if len(equity_curve) < len(df):
         equity_curve += [equity_curve[-1]] * (len(df) - len(equity_curve))
