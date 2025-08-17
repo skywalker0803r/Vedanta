@@ -321,7 +321,7 @@ def backtest_signals(df: pd.DataFrame,
 
     # New calculations for comprehensive metrics
     equity_curve_series = pd.Series(equity_curve)
-    daily_returns = equity_curve_series.pct_change().dropna()
+    daily_returns = np.log(equity_curve_series / equity_curve_series.shift(1)).dropna()
 
     annualized_return = (1 + daily_returns.mean())**365 - 1 if not daily_returns.empty else 0
     annualized_volatility = daily_returns.std() * np.sqrt(365) if not daily_returns.empty else 0
