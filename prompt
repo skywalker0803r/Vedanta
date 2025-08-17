@@ -1,0 +1,4 @@
+result = backtest_signals(...)  
+display(pd.DataFrame(result['trades_log']).iloc[::-1].head(10).style.background_gradient())
+我希望這樣使用之後可以看到類似Trade View的List of trades
+格式可以參考test.html

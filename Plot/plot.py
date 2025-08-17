@@ -105,3 +105,115 @@ def plot_backtest_result(result, max_trades_to_draw=10, max_points=3000):
 
     plt.tight_layout()
     plt.show()
+
+def display_trades_log_as_html(trades_log):
+    html_output = """
+    <style>
+      body {
+        background-color: #1a1a1a;
+        color: #e0e0e0;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      }
+      .trade-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      .trade-table th, .trade-table td {
+        padding: 12px;
+        border-bottom: 1px solid #333;
+        text-align: left;
+        white-space: nowrap;
+        vertical-align: top;
+      }
+      .trade-table th {
+        color: #999;
+        font-weight: normal;
+        text-align: right;
+      }
+      .trade-table td {
+        color: #e0e0e0;
+        font-weight: 500;
+      }
+      .trade-table .header-row th {
+        border-bottom: 2px solid #555;
+        padding-bottom: 15px;
+        text-align: left;
+      }
+      .trade-table .trade-id {
+        color: #007bff;
+      }
+      .trade-table .short-trade-id {
+        color: #ff3333;
+      }
+      .trade-table .value-col {
+        text-align: right;
+      }
+      .trade-table .positive-value {
+        color: #00ff00;
+      }
+      .trade-table .negative-value {
+        color: #ff3333;
+      }
+      .trade-table .merged-cell {
+        border-bottom: none;
+      }
+    </style>
+    <table class="trade-table">
+      <thead>
+        <tr class="header-row">
+          <th>Trade #</th>
+          <th>Type</th>
+          <th>Date/Time</th>
+          <th>Signal</th>
+          <th>Price</th>
+          <th>Position size</th>
+          <th>P&L</th>
+          <th>Cumulative P&L</th>
+        </tr>
+      </thead>
+      <tbody>
+    """
+
+    for i, trade in enumerate(reversed(trades_log)): # Iterate in reverse to show latest trades first
+        trade_number = len(trades_log) - i
+        trade_type_class = "trade-id" if trade['Type'] == 'Long' else "short-trade-id"
+        trade_type_text = f"{trade_number} {trade['Type']}"
+
+        # P&L formatting
+        pnl_usdt = float(trade['P&L (USDT)'].replace(',', ''))
+        pnl_class = "positive-value" if pnl_usdt >= 0 else "negative-value"
+        pnl_text = f"<div>{trade['P&L (USDT)']} usdt</div><div>{trade['P&L (%)']}</div>"
+
+        html_output += f"""
+        <tr>
+          <td rowspan="2" class="{trade_type_class} merged-cell">{trade_type_text}</td>
+          <td class="merged-cell">Exit</td>
+          <td class="merged-cell">{trade['Date/Time (Exit)']}</td>
+          <td class="merged-cell">{trade['Signal (Exit)']}</td>
+          <td class="merged-cell">{trade['Price (Exit)']} usdt</td>
+          <td rowspan="2">
+            <div>{trade['Position size']}</div>
+          </td>
+          <td rowspan="2" class="{pnl_class}">
+            {pnl_text}
+          </td>
+          <td rowspan="2" class="positive-value">
+            <div>{trade['Cumulative P&L']} usdt</div>
+          </td>
+        </tr>
+        <tr>
+          <td style="border-top: 1px solid #333;">Entry</td>
+          <td style="border-top: 1px solid #333;">{trade['Date/Time (Entry)']}</td>
+          <td style="border-top: 1px solid #333;">{trade['Signal (Entry)']}</td>
+          <td style="border-top: 1px solid #333;">{trade['Price (Entry)']} usdt</td>
+        </tr>
+        <tr>
+          <td colspan="8" style="padding: 0; height: 20px;"></td>
+        </tr>
+        """
+    html_output += """
+      </tbody>
+    </table>
+    """
+    return html_output
