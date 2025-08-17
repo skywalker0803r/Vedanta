@@ -13,7 +13,8 @@ def backtest_signals(df: pd.DataFrame,
                                 capital_ratio=1,
                                 maintenance_margin_ratio=0.005,
                                 liquidation_penalty=1.0,
-                                delay_entry=True):
+                                delay_entry=True,
+                                risk_free_rate=0.02):
     """
     Simulates a trading strategy with a "worst-case" scenario for stop-loss and take-profit.
     If both conditions are met within the same bar, the stop-loss is always triggered.
@@ -318,18 +319,98 @@ def backtest_signals(df: pd.DataFrame,
 
     buy_and_hold_return = (df['buy_and_hold'].iloc[-1] / initial_capital - 1) * 100
 
+    # New calculations for comprehensive metrics
+    equity_curve_series = pd.Series(equity_curve)
+    daily_returns = equity_curve_series.pct_change().dropna()
+
+    annualized_return = (1 + daily_returns.mean())**252 - 1 if not daily_returns.empty else 0
+    annualized_volatility = daily_returns.std() * np.sqrt(252) if not daily_returns.empty else 0
+
+    sharpe_ratio = (annualized_return - risk_free_rate) / annualized_volatility if annualized_volatility != 0 else np.inf
+
+    # Calculate daily risk-free rate
+    risk_free_rate_daily = (1 + risk_free_rate)**(1/252) - 1
+
+    # Calculate downside deviation (DD)
+    if not daily_returns.empty:
+        diff_from_target = daily_returns - risk_free_rate_daily
+        downside_diff = np.minimum(0, diff_from_target)
+        downside_variance = np.sum(downside_diff**2) / len(daily_returns)
+        downside_deviation = np.sqrt(downside_variance) * np.sqrt(252) # Annualize
+    else:
+        downside_deviation = 0
+    sortino_ratio = (annualized_return - risk_free_rate) / downside_deviation if downside_deviation != 0 else np.inf
+
+    calmar_ratio = annualized_return / abs(max_dd) if max_dd != 0 else np.inf
+
+    recovery_factor = net_profit_usdt / abs(df['drawdown'].min() * initial_capital) if df['drawdown'].min() != 0 else np.inf
+
+    # Expectancy
+    if trade_returns:
+        avg_win = np.mean(wins) if wins else 0
+        avg_loss = np.mean(losses) if losses else 0
+        win_rate = len(wins) / len(trade_returns)
+        loss_rate = len(losses) / len(trade_returns)
+        expectancy = (avg_win * win_rate) - (avg_loss * loss_rate)
+    else:
+        expectancy = 0
+
+    # Largest Win/Loss
+    largest_win = max(wins) * 100 if wins else 0
+    largest_loss = min(losses) * 100 if losses else 0
+
+    # Max Consecutive Wins/Losses
+    max_consecutive_wins = 0
+    max_consecutive_losses = 0
+    current_consecutive_wins = 0
+    current_consecutive_losses = 0
+
+    for r in trade_returns:
+        if r > 0:
+            current_consecutive_wins += 1
+            current_consecutive_losses = 0
+            max_consecutive_wins = max(max_consecutive_wins, current_consecutive_wins)
+        else:
+            current_consecutive_losses += 1
+            current_consecutive_wins = 0
+            max_consecutive_losses = max(max_consecutive_losses, current_consecutive_losses)
+
     return {
-        'metric': {
+        'Overview performance': {
             'Net Profit (%)': f'{(net_profit_usdt / initial_capital) * 100:,.2f}%',
             'Total Closed Trades': len(trade_returns),
             'Percent Profitable': f'{(np.mean([r > 0 for r in trade_returns]) * 100):.2f}%' if trade_returns else '0.00%',
             'Profit Factor': f'{profit_factor:.2f}',
             'Max Drawdown': f'{max_dd * 100:.2f}%',
-            'Avg Trade': f'{np.mean(trade_returns) * 100:.2f}%' if trade_returns else '0.00%',
-            'Avg Win Trade': f'{np.mean(wins) * 100:.2f}%' if wins else '0.00%',
-            'Avg Loss Trade': f'{np.mean(losses) * 100:.2f}%' if losses else '0.00%',
-            'Avg Bars in Trade': f'{np.mean(hold_bars):.2f}' if hold_bars else '0.00',
             'Buy & Hold Return': f'{buy_and_hold_return:.2f}%',
+            'Annualized Return': f'{annualized_return * 100:,.2f}%',
+            'Annualized Volatility': f'{annualized_volatility * 100:,.2f}%',
+            'Sharpe Ratio': f'{sharpe_ratio:.2f}',
+            'Sortino Ratio': f'{sortino_ratio:.2f}',
+            'Calmar Ratio': f'{calmar_ratio:.2f}',
+            'Recovery Factor': f'{recovery_factor:.2f}',
+        },
+        'Trades analysis': {
+            'Total Trades': len(trade_returns),
+            'Number of Winning Trades': len(wins),
+            'Number of Losing Trades': len(losses),
+            'Average Trade (%)': f'{np.mean(trade_returns) * 100:.2f}%' if trade_returns else '0.00%',
+            'Average Win (%)': f'{np.mean(wins) * 100:.2f}%' if wins else '0.00%',
+            'Average Loss (%)': f'{np.mean(losses) * 100:.2f}%' if losses else '0.00%',
+            'Largest Win (%)': f'{largest_win:.2f}%',
+            'Largest Loss (%)': f'{largest_loss:.2f}%',
+            'Max Consecutive Wins': max_consecutive_wins,
+            'Max Consecutive Losses': max_consecutive_losses,
+            'Expectancy': f'{expectancy * 100:.2f}%',
+            'Avg Bars in Trade': f'{np.mean(hold_bars):.2f}' if hold_bars else '0.00',
+        },
+        'Risk/performance ratios': {
+            'Sharpe Ratio': f'{sharpe_ratio:.2f}',
+            'Sortino Ratio': f'{sortino_ratio:.2f}',
+            'Calmar Ratio': f'{calmar_ratio:.2f}',
+            'Profit Factor': f'{profit_factor:.2f}',
+            'Max Drawdown': f'{max_dd * 100:.2f}%',
+            'Recovery Factor': f'{recovery_factor:.2f}',
         },
         'fig': {
             'timestamp': df['timestamp'].tolist(),
