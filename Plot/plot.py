@@ -46,16 +46,16 @@ def plot_backtest_result(result, max_trades_to_draw=10, max_points=3000):
 
     # Plot strategy equity curve with conditional coloring and fill
     # Find points where equity crosses the 0-axis
-    above_zero = equity_pct >= 0
-    below_zero = equity_pct < 0
+    equity_pct_green = np.where(equity_pct >= 0, equity_pct, np.nan)
+    equity_pct_red = np.where(equity_pct < 0, equity_pct, np.nan)
 
     # Plot green line and fill for positive equity
-    axs[0].plot(timestamp_ds[above_zero], equity_pct[above_zero], label="Strategy Return (%)", color="green", linewidth=2)
-    axs[0].fill_between(timestamp_ds, 0, equity_pct, where=above_zero, facecolor='green', alpha=0.1)
+    axs[0].plot(timestamp_ds, equity_pct_green, label="Strategy Return (%)", color="green", linewidth=2)
+    axs[0].fill_between(timestamp_ds, 0, equity_pct, where=equity_pct >= 0, facecolor='green', alpha=0.1)
 
     # Plot red line and fill for negative equity
-    axs[0].plot(timestamp_ds[below_zero], equity_pct[below_zero], color="red", linewidth=2)
-    axs[0].fill_between(timestamp_ds, 0, equity_pct, where=below_zero, facecolor='red', alpha=0.1)
+    axs[0].plot(timestamp_ds, equity_pct_red, color="red", linewidth=2)
+    axs[0].fill_between(timestamp_ds, 0, equity_pct, where=equity_pct < 0, facecolor='red', alpha=0.1)
 
     # Draw a horizontal line at 0 for reference
     axs[0].axhline(0, color='gray', linestyle='--', linewidth=0.8)
