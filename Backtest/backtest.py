@@ -62,6 +62,7 @@ def backtest_signals(df: pd.DataFrame,
 
     equity_curve = [initial_capital]
     trade_returns, hold_bars, trades_log = [], [], []
+    cumulative_pnl_usdt = 0
 
     entry_price = None
     entry_index = None
@@ -170,6 +171,7 @@ def backtest_signals(df: pd.DataFrame,
                 hold_bars.append(holding_period)
                 # Calculate P&L (USDT)
                 pnl_usdt = capital_used * rtn
+                cumulative_pnl_usdt += pnl_usdt # Update cumulative P&L
 
                 # Determine Type
                 trade_type = 'Long' if entry_position > 0 else 'Short'
@@ -186,6 +188,9 @@ def backtest_signals(df: pd.DataFrame,
                 else: # Short exit
                     signal_exit = '空單平倉'
 
+                # Calculate Position Size
+                position_size = capital_used * leverage
+
                 trades_log.append({
                     'Type': trade_type,
                     'Date/Time (Entry)': df.iloc[entry_index]['timestamp'].strftime('%Y/%m/%d, %H:%M'),
@@ -194,8 +199,10 @@ def backtest_signals(df: pd.DataFrame,
                     'Signal (Exit)': signal_exit,
                     'Price (Entry)': f'{entry_price:,.2f}',
                     'Price (Exit)': f'{exit_price:,.2f}',
+                    'Position size': f'{position_size:,.2f}',
                     'P&L (USDT)': f'{pnl_usdt:,.2f}',
                     'P&L (%)': f'{rtn * 100:,.2f}%',
+                    'Cumulative P&L': f'{cumulative_pnl_usdt:,.2f}',
                 })
 
                 entry_price = None
@@ -237,6 +244,7 @@ def backtest_signals(df: pd.DataFrame,
         hold_bars.append(len(df) - entry_index)
         # Calculate P&L (USDT)
         pnl_usdt = capital_used * rtn
+        cumulative_pnl_usdt += pnl_usdt # Update cumulative P&L
 
         # Determine Type
         trade_type = 'Long' if entry_position > 0 else 'Short'
@@ -253,6 +261,9 @@ def backtest_signals(df: pd.DataFrame,
         else: # Short exit
             signal_exit = '空單平倉'
 
+        # Calculate Position Size
+        position_size = capital_used * leverage
+
         trades_log.append({
             'Type': trade_type,
             'Date/Time (Entry)': df.iloc[entry_index]['timestamp'].strftime('%Y/%m/%d, %H:%M'),
@@ -261,8 +272,10 @@ def backtest_signals(df: pd.DataFrame,
             'Signal (Exit)': signal_exit,
             'Price (Entry)': f'{entry_price:,.2f}',
             'Price (Exit)': f'{final_price:,.2f}',
+            'Position size': f'{position_size:,.2f}',
             'P&L (USDT)': f'{pnl_usdt:,.2f}',
             'P&L (%)': f'{rtn * 100:,.2f}%',
+            'Cumulative P&L': f'{cumulative_pnl_usdt:,.2f}',
         })
 
         equity_curve[-1] = current_equity
