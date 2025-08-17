@@ -13,7 +13,7 @@ def plot_backtest_result(result, max_trades_to_draw=10, max_points=3000):
     buy_and_hold = np.array(fig_data["buy_and_hold"])
     position = np.array(fig_data["position"])
     signal = np.array(fig_data["signal"])
-    trade_returns = [t['return'] for t in trades]
+    trade_returns = [float(t['P&L (%)'].replace('%', '').replace(',', '')) for t in trades]
 
     # Downsampling（避免繪圖過慢）
     if len(timestamp) > max_points:
@@ -80,11 +80,11 @@ def plot_backtest_result(result, max_trades_to_draw=10, max_points=3000):
 
     # Entry/Exit 點（最多畫 N 筆）
     for i, trade in enumerate(trades[:max_trades_to_draw]):
-        entry_time = pd.to_datetime(trade["entry_time"])
-        exit_time = pd.to_datetime(trade["exit_time"])
-        entry_price = trade["entry_price"]
-        exit_price = trade["exit_price"]
-        color = "green" if trade["side"] == "long" else "red"
+        entry_time = pd.to_datetime(trade["Date/Time (Entry)"])
+        exit_time = pd.to_datetime(trade["Date/Time (Exit)"])
+        entry_price = float(trade["Price (Entry)"].replace(',', ''))
+        exit_price = float(trade["Price (Exit)"].replace(',', ''))
+        color = "green" if trade["Type"] == "Long" else "red"
         axs[1].scatter(entry_time, entry_price, color=color, marker='o', edgecolor='black', zorder=6,
                        label="Entry" if i == 0 else None)
         axs[1].scatter(exit_time, exit_price, color=color, marker='x', edgecolor='black', zorder=6,
