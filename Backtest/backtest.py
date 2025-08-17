@@ -2,9 +2,9 @@ import numpy as np
 import pandas as pd
 
 def backtest_signals(df: pd.DataFrame,
-                                initial_capital=100,
-                                fee_rate=0.001,
-                                leverage=10, # Adjusted to match Pine Script's 10x margin
+                                initial_capital=1000000,
+                                fee_rate=0.000,
+                                leverage=1, # Adjusted to match Pine Script's 10x margin
                                 allow_short=True,
                                 stop_loss=None,
                                 take_profit=None,
