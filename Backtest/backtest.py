@@ -168,15 +168,34 @@ def backtest_signals(df: pd.DataFrame,
 
                 trade_returns.append(rtn)
                 hold_bars.append(holding_period)
+                # Calculate P&L (USDT)
+                pnl_usdt = capital_used * rtn
+
+                # Determine Type
+                trade_type = 'Long' if entry_position > 0 else 'Short'
+
+                # Determine Signal (Entry)
+                signal_entry = '多單開倉' if entry_position > 0 else '空單開倉'
+
+                # Determine Signal (Exit)
+                signal_exit = ''
+                if exit_reason == 'Liquidated' or exit_reason == 'Final Liquidated':
+                    signal_exit = 'Margin call'
+                elif entry_position > 0: # Long exit
+                    signal_exit = '多單平倉'
+                else: # Short exit
+                    signal_exit = '空單平倉'
+
                 trades_log.append({
-                    'entry_time': df.iloc[entry_index]['timestamp'],
-                    'exit_time': row['timestamp'],
-                    'side': 'long' if entry_position > 0 else 'short',
-                    'entry_price': entry_price,
-                    'exit_price': exit_price,
-                    'bars_held': holding_period,
-                    'return': rtn,
-                    'reason': exit_reason,
+                    'Type': trade_type,
+                    'Date/Time (Entry)': df.iloc[entry_index]['timestamp'].strftime('%Y/%m/%d, %H:%M'),
+                    'Date/Time (Exit)': row['timestamp'].strftime('%Y/%m/%d, %H:%M'),
+                    'Signal (Entry)': signal_entry,
+                    'Signal (Exit)': signal_exit,
+                    'Price (Entry)': f'{entry_price:,.2f}',
+                    'Price (Exit)': f'{exit_price:,.2f}',
+                    'P&L (USDT)': f'{pnl_usdt:,.2f}',
+                    'P&L (%)': f'{rtn * 100:,.2f}%',
                 })
 
                 entry_price = None
@@ -216,15 +235,34 @@ def backtest_signals(df: pd.DataFrame,
 
         trade_returns.append(rtn)
         hold_bars.append(len(df) - entry_index)
+        # Calculate P&L (USDT)
+        pnl_usdt = capital_used * rtn
+
+        # Determine Type
+        trade_type = 'Long' if entry_position > 0 else 'Short'
+
+        # Determine Signal (Entry)
+        signal_entry = '多單開倉' if entry_position > 0 else '空單開倉'
+
+        # Determine Signal (Exit)
+        signal_exit = ''
+        if exit_reason == 'Liquidated' or exit_reason == 'Final Liquidated':
+            signal_exit = 'Margin call'
+        elif entry_position > 0: # Long exit
+            signal_exit = '多單平倉'
+        else: # Short exit
+            signal_exit = '空單平倉'
+
         trades_log.append({
-            'entry_time': df.iloc[entry_index]['timestamp'],
-            'exit_time': df.iloc[-1]['timestamp'],
-            'side': 'long' if entry_position > 0 else 'short',
-            'entry_price': entry_price,
-            'exit_price': final_price,
-            'bars_held': len(df) - entry_index,
-            'return': rtn,
-            'reason': exit_reason,
+            'Type': trade_type,
+            'Date/Time (Entry)': df.iloc[entry_index]['timestamp'].strftime('%Y/%m/%d, %H:%M'),
+            'Date/Time (Exit)': df.iloc[-1]['timestamp'].strftime('%Y/%m/%d, %H:%M'),
+            'Signal (Entry)': signal_entry,
+            'Signal (Exit)': signal_exit,
+            'Price (Entry)': f'{entry_price:,.2f}',
+            'Price (Exit)': f'{final_price:,.2f}',
+            'P&L (USDT)': f'{pnl_usdt:,.2f}',
+            'P&L (%)': f'{rtn * 100:,.2f}%',
         })
 
         equity_curve[-1] = current_equity
