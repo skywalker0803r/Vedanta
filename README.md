@@ -20,6 +20,9 @@ Vedanta 是一個簡潔實用的加密貨幣交易策略回測與自動化交易
 
 ![Backtest Example](img/backtest.png)
 
+![Backtest Example2](img/trade_logs.png)
+
+
 ### 線上部署範例：
 
 ![Online Deployment Example](img/render_deploy.png)
