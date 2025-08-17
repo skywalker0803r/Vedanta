@@ -5,9 +5,8 @@ import numpy as np
 import time
 
 def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limit: int = 3000) -> pd.DataFrame:
-    time.sleep(1)
     """
-    從幣安 API 獲取 K 線數據。
+    從幣安 API 獲取 K 線數據（UTC 時區，與 TradingView 對齊）。
 
     Args:
         symbol (str): 交易對符號 (例如 "BTCUSDT")。
@@ -16,7 +15,7 @@ def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limi
         total_limit (int): 要獲取的 K 線總數。
 
     Returns:
-        pd.DataFrame: 包含 K 線數據的 DataFrame。
+        pd.DataFrame: 包含 K 線數據的 DataFrame (UTC 時間)。
     """
     base_url = "https://api.binance.com/api/v3/klines"
     all_data = []
@@ -35,19 +34,19 @@ def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limi
         try:
             response = requests.get(base_url, params=params, timeout=10)
             response.raise_for_status()
-        except Exception as e:
-            print(f"Error fetching data: {e}")
-            break
+        except requests.RequestException as e:
+            raise RuntimeError(f"Binance API request failed: {e}")
 
         data = response.json()
 
         if not data:
-            print("No more data returned from API.")
             break
 
-        all_data = data + all_data  # 按時間順序前置
+        all_data = data + all_data  # 前置，保持時間順序
         end_timestamp = data[0][0] - 1  # 下一輪抓更舊的資料
         remaining -= len(data)
+
+        time.sleep(0.1)  # 輕微延遲避免打太快
 
     if not all_data:
         raise ValueError("Failed to fetch any K-line data.")
@@ -58,12 +57,15 @@ def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limi
         "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore"
     ])
 
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-    df[["open", "high", "low", "close"]] = df[["open", "high", "low", "close"]].astype(float)
+    # 轉換時間為 UTC
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
+
+    # 數值型態轉換
+    df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(float)
 
     df = df.drop_duplicates(subset="timestamp").sort_values("timestamp").reset_index(drop=True)
 
-    return df[["timestamp", "open", "high", "low", "close"]]
+    return df[["timestamp", "open", "high", "low", "close", "volume"]]
 
 
 def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 1000) -> pd.DataFrame:

@@ -9,7 +9,7 @@ def backtest_signals(df: pd.DataFrame,
                                 stop_loss=None,
                                 take_profit=None,
                                 max_hold_bars=None,
-                                slippage_rate=0.0005,
+                                slippage_rate=0.0000,
                                 capital_ratio=1,
                                 maintenance_margin_ratio=0.005,
                                 liquidation_penalty=1.0,
@@ -45,7 +45,7 @@ def backtest_signals(df: pd.DataFrame,
 
     df = df.copy().reset_index(drop=True)
 
-    if not np.issubdtype(df['timestamp'].dtype, np.datetime64):
+    if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
         df['timestamp'] = pd.to_datetime(df['timestamp'])
 
     if delay_entry:
@@ -227,7 +227,7 @@ def backtest_signals(df: pd.DataFrame,
 
         # ===== 進場判斷 =====
         if entry_position == 0 and target_position != 0:
-            entry_price = open_ * (1 + fee_rate) * buy_slip if target_position > 0 else open_ * (1 - fee_rate) * sell_slip
+            entry_price = close_ * (1 + fee_rate) * buy_slip if target_position > 0 else close_ * (1 - fee_rate) * sell_slip
             entry_index = i
             entry_position = target_position
             # Initialize for new trade
