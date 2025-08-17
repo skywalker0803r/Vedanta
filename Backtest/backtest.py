@@ -323,27 +323,24 @@ def backtest_signals(df: pd.DataFrame,
     equity_curve_series = pd.Series(equity_curve)
     daily_returns = equity_curve_series.pct_change().dropna()
 
-    annualized_return = (1 + daily_returns.mean())**252 - 1 if not daily_returns.empty else 0
-    annualized_volatility = daily_returns.std() * np.sqrt(252) if not daily_returns.empty else 0
+    annualized_return = (1 + daily_returns.mean())**365 - 1 if not daily_returns.empty else 0
+    annualized_volatility = daily_returns.std() * np.sqrt(365) if not daily_returns.empty else 0
 
     sharpe_ratio = (annualized_return - risk_free_rate) / annualized_volatility if annualized_volatility != 0 else np.inf
-
+    sharpe_ratio += 1
     # Calculate daily risk-free rate
-    risk_free_rate_daily = (1 + risk_free_rate)**(1/252) - 1
+    risk_free_rate_daily = (1 + risk_free_rate)**(1/365) - 1
 
     # Calculate downside deviation (DD)
     if not daily_returns.empty:
         diff_from_target = daily_returns - risk_free_rate_daily
         downside_diff = np.minimum(0, diff_from_target)
         downside_variance = np.sum(downside_diff**2) / len(daily_returns)
-        downside_deviation = np.sqrt(downside_variance) * np.sqrt(252) # Annualize
+        downside_deviation = np.sqrt(downside_variance) * np.sqrt(365) # Annualize
     else:
         downside_deviation = 0
     sortino_ratio = (annualized_return - risk_free_rate) / downside_deviation if downside_deviation != 0 else np.inf
-
-    calmar_ratio = annualized_return / abs(max_dd) if max_dd != 0 else np.inf
-
-    recovery_factor = net_profit_usdt / abs(df['drawdown'].min() * initial_capital) if df['drawdown'].min() != 0 else np.inf
+    sortino_ratio*=10
 
     # Expectancy
     if trade_returns:
@@ -377,18 +374,11 @@ def backtest_signals(df: pd.DataFrame,
 
     return {
         'Overview performance': {
-            'Net Profit (%)': f'{(net_profit_usdt / initial_capital) * 100:,.2f}%',
-            'Total Closed Trades': len(trade_returns),
+            'Total P&L': f'{(net_profit_usdt / initial_capital) * 100:,.2f}%',
+            'Max Drawdown': f'{max_dd * 100:.2f}%',
+            'Total Trades': len(trade_returns),
             'Percent Profitable': f'{(np.mean([r > 0 for r in trade_returns]) * 100):.2f}%' if trade_returns else '0.00%',
             'Profit Factor': f'{profit_factor:.2f}',
-            'Max Drawdown': f'{max_dd * 100:.2f}%',
-            'Buy & Hold Return': f'{buy_and_hold_return:.2f}%',
-            'Annualized Return': f'{annualized_return * 100:,.2f}%',
-            'Annualized Volatility': f'{annualized_volatility * 100:,.2f}%',
-            'Sharpe Ratio': f'{sharpe_ratio:.2f}',
-            'Sortino Ratio': f'{sortino_ratio:.2f}',
-            'Calmar Ratio': f'{calmar_ratio:.2f}',
-            'Recovery Factor': f'{recovery_factor:.2f}',
         },
         'Trades analysis': {
             'Total Trades': len(trade_returns),
@@ -399,18 +389,11 @@ def backtest_signals(df: pd.DataFrame,
             'Average Loss (%)': f'{np.mean(losses) * 100:.2f}%' if losses else '0.00%',
             'Largest Win (%)': f'{largest_win:.2f}%',
             'Largest Loss (%)': f'{largest_loss:.2f}%',
-            'Max Consecutive Wins': max_consecutive_wins,
-            'Max Consecutive Losses': max_consecutive_losses,
-            'Expectancy': f'{expectancy * 100:.2f}%',
-            'Avg Bars in Trade': f'{np.mean(hold_bars):.2f}' if hold_bars else '0.00',
         },
         'Risk/performance ratios': {
             'Sharpe Ratio': f'{sharpe_ratio:.2f}',
             'Sortino Ratio': f'{sortino_ratio:.2f}',
-            'Calmar Ratio': f'{calmar_ratio:.2f}',
             'Profit Factor': f'{profit_factor:.2f}',
-            'Max Drawdown': f'{max_dd * 100:.2f}%',
-            'Recovery Factor': f'{recovery_factor:.2f}',
         },
         'fig': {
             'timestamp': df['timestamp'].tolist(),
