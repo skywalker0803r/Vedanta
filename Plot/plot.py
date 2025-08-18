@@ -80,15 +80,17 @@ def plot_backtest_result(result, max_trades_to_draw=10, max_points=3000):
 
     # Entry/Exit 點（最多畫 N 筆）
     for i, trade in enumerate(trades[:max_trades_to_draw]):
-        entry_time = pd.to_datetime(trade["Date/Time (Entry)"])
-        exit_time = pd.to_datetime(trade["Date/Time (Exit)"])
+        entry_time = pd.to_datetime(trade["Date/Time (Entry)"], errors='coerce')
+        exit_time = pd.to_datetime(trade["Date/Time (Exit)"], errors='coerce')
         entry_price = float(trade["Price (Entry)"].replace(',', ''))
         exit_price = float(trade["Price (Exit)"].replace(',', ''))
         color = "green" if trade["Type"] == "Long" else "red"
         axs[1].scatter(entry_time, entry_price, color=color, marker='o', edgecolor='black', zorder=6,
                        label="Entry" if i == 0 else None)
-        axs[1].scatter(exit_time, exit_price, color=color, marker='x', edgecolor='black', zorder=6,
-                       label="Exit" if i == 0 else None)
+        # Only plot exit if exit_time is a valid datetime (not NaT)
+        if pd.notna(exit_time):
+            axs[1].scatter(exit_time, exit_price, color=color, marker='x', edgecolor='black', zorder=6,
+                           label="Exit" if i == 0 else None)
         # （可選）畫箭頭會變慢
         # axs[1].annotate("", xy=(exit_time, exit_price), xytext=(entry_time, entry_price),
         #                 arrowprops=dict(arrowstyle="->", color=color, lw=1.2), zorder=4)
