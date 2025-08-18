@@ -100,7 +100,7 @@ def plot_backtest_result(result, max_trades_to_draw=10, max_points=3000):
     axs[1].grid()
 
     # === [3] 單筆交易報酬分布 ===
-    axs[2].hist(np.array(trade_returns) * 100, bins=20, color="skyblue", edgecolor="k")
+    axs[2].hist(np.array(trade_returns), bins=20, color="skyblue", edgecolor="k")
     axs[2].set_title("Trade Return Distribution (%)")
     axs[2].set_xlabel("Return (%)")
     axs[2].grid()
