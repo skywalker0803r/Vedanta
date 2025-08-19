@@ -57,6 +57,10 @@ def backtest_signals(df: pd.DataFrame,
         # Use the position from get_signals directly
         df['target_position'] = df['position'].fillna(0)
 
+    # If short selling is not allowed, convert all -1 target positions to 0
+    if not allow_short:
+        df.loc[df['target_position'] == -1, 'target_position'] = 0
+
     # The 'position' column in the input df is now the source for target_position.
     # The previous line that re-derived 'df['position']' from 'used_signal' is removed.
     df.loc[0, 'target_position'] = 0 # Ensure first bar has no target position
