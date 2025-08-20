@@ -1,0 +1,56 @@
+//@version=5
+strategy("Market Pipeline Example", overlay=true, margin_long=100, margin_short=100, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+// === Input parameters ===
+fastLength = input.int(20, "Fast MA")
+slowLength = input.int(50, "Slow MA")
+atrLength  = input.int(14, "ATR Length")
+
+// === Indicators (Perception Layer) ===
+ma_fast = ta.sma(close, fastLength)
+ma_slow = ta.sma(close, slowLength)
+atr_val = ta.sma(high - low, atrLength)
+
+// === Pattern Recognition (Analysis Layer) ===
+pattern = if ma_fast > ma_slow
+    "TrendUp"
+else if ma_fast < ma_slow
+    "TrendDown"
+else
+    "Neutral"
+
+// === Dispatcher (Decision Layer) ===
+family = if pattern == "TrendUp"
+    "Trend"
+else if pattern == "TrendDown"
+    "Reversal"
+else
+    "Range"
+
+// === Execution Engine (Sub-strategies) ===
+signal = "NoSignal"
+
+if family == "Trend"
+    signal := ma_fast > ma_slow ? "Buy" : "NoSignal"
+
+if family == "Reversal"
+    signal := ma_fast < ma_slow ? "Sell" : "NoSignal"
+
+if family == "Range"
+    signal := close > ma_slow ? "Sell" : "Buy"
+
+// === Signal Mapping ===
+longCondition  = signal == "Buy"
+shortCondition = signal == "Sell"
+
+// === Position Execution ===
+if longCondition
+    strategy.entry("Long", strategy.long)
+if shortCondition
+    strategy.entry("Short", strategy.short)
+
+// === Plotting ===
+plot(ma_fast, color=color.teal, title="Fast MA")
+plot(ma_slow, color=color.orange, title="Slow MA")
+plotshape(longCondition, title="Buy Signal", style=shape.triangleup, color=color.green, size=size.small, location=location.belowbar)
+plotshape(shortCondition, title="Sell Signal", style=shape.triangledown, color=color.red, size=size.small, location=location.abovebar)

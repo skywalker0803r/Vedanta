@@ -21,3 +21,4 @@ from . import vegas_ema
 from . import turtle_strategy
 from . import WhaleSignal_WBTC
 from . import SmoothedMACDStrategy
+from . import MarketPerception
