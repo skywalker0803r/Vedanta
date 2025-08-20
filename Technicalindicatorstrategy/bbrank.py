@@ -5,7 +5,7 @@ import numpy as np
 import time
 
 def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limit: int = 1000) -> pd.DataFrame:
-    time.sleep(0.2)
+    time.sleep(0.1)
     base_url = "https://api.binance.com/api/v3/klines"
     all_data = []
     end_timestamp = int(end_time.timestamp() * 1000)
@@ -80,30 +80,31 @@ def calc_indicators(df: pd.DataFrame, bb_length, mult
 # =======================
 # 3. 訊號判斷
 # =======================
-def generate_signals(df: pd.DataFrame, rank_th
-                     , ATR_multi_SL, ATR_multi_TP):
+def generate_signals(df: pd.DataFrame, rank_th,
+                    ATR_multi_SL, ATR_multi_TP,
+                    rank_th_2, ATR_multi_SL_2, ATR_multi_TP_2,
+                    allow_dual_position: bool = True
+                    ):
     df = df.copy()
+
+    # === 趨勢 & 盤整獨立倉位 ===
+    trend_position = 0
+    trend_entry = np.nan
+    trend_sl = np.nan
+    trend_tp = np.nan
+
+    consolid_position = 0
+    consolid_entry = np.nan
+    consolid_sl = np.nan
+    consolid_tp = np.nan
+
+  
+    # === 記錄 ===
+    signals, positions, reasons = [], [], []
+    trend_positions, consolid_positions = [], []
+    trend_entries, trend_stops = [], []
+    consolid_entries, consolid_stops = [], []
     
-    # df["signal"] = 0
-    # df["position"] = 0
-
-
-    # 初始狀態
-    current_position = 0 # 追蹤當前倉位
-    entry_price = np.nan
-    stop_loss = np.nan
-    take_profit = np.nan
-    take_profit = np.nan
-
-    # 記錄訊號和倉位
-    signals = []
-    positions = []
-    entry_prices = []
-    stop_losses = []
-    take_profits = []
-    reasons = [] # 新增原因欄位
-
-
     for i in range(len(df)):
         if (
             np.isnan(df.loc[i, "ma"]) 
@@ -114,85 +115,143 @@ def generate_signals(df: pd.DataFrame, rank_th
         ):
             signals.append(0)
             positions.append(0)
-            entry_prices.append(np.nan)
-            stop_losses.append(np.nan)
-            reasons.append("") # 初始狀態無原因
+            reasons.append("")
+            trend_positions.append(0)
+            consolid_positions.append(0)
+            trend_entries.append(np.nan)
+            trend_stops.append(np.nan)
+            consolid_entries.append(np.nan)
+            consolid_stops.append(np.nan)
             continue
 
-        close = df.loc[i, "close"]
-        ma = df.loc[i, "ma"]
-        upper = df.loc[i, "upper"]
-        lower = df.loc[i, "lower"]
-        rank = df.loc[i, "bb_rank"]
-        ATR = df.loc[i, "ATR"]
-        
-        current_signal = 0
-        current_reason = ""
+        close, ma, upper, lower = df.loc[i, ["close", "ma", "upper", "lower"]]
+        rank, ATR = df.loc[i, ["bb_rank", "ATR"]]
 
-        # === 進場條件 ===
-        if current_position == 0 and current_signal == 0:
-            # 多頭進場條件：BBRank>閾值
+        current_signal, current_reason = 0, ""
+
+        # ============= 趨勢策略處理 =============
+        if trend_position == 0:
             if rank > rank_th and close >= ma and close <= upper:
-                current_position = 1
-                entry_price = close
-                stop_loss = entry_price - ATR_multi_SL * ATR
-                take_profit = entry_price + ATR_multi_TP * ATR
-                current_signal = 1  # 訊號改為 1，代表開多
-                current_reason = "多單進場"
-
-            # 空頭進場條件：BBRank
+                # 如果不允許雙倉，需平掉盤整倉位
+                if not allow_dual_position and consolid_position != 0:
+                    consolid_position = 0
+                    current_reason = "切換趨勢多，先平盤整倉"
+                trend_position = 1
+                trend_entry = close
+                trend_sl = trend_entry - ATR_multi_SL * ATR
+                trend_tp = trend_entry + ATR_multi_TP * ATR
+                current_signal, current_reason = 1, "趨勢多單進場"
             elif rank > rank_th and close <= ma and close >= lower:
-                current_position = -1
-                entry_price = close
-                stop_loss = entry_price + ATR_multi_SL * ATR
-                take_profit = entry_price - ATR_multi_TP * ATR
-                current_signal = -1  # 訊號改為 -1，代表開空
-                current_reason = "空單進場"
+                if not allow_dual_position and consolid_position != 0:
+                    consolid_position = 0
+                    current_reason = "切換趨勢空，先平盤整倉"
+                trend_position = -1
+                trend_entry = close
+                trend_sl = trend_entry + ATR_multi_SL * ATR
+                trend_tp = trend_entry - ATR_multi_TP * ATR
+                current_signal, current_reason = -1, "趨勢空單進場"
+        else:
+            if trend_position == 1:
+                if close < trend_sl:
+                    trend_position = 0
+                    trend_entry = np.nan
+                    trend_sl = np.nan
+                    trend_tp = np.nan
+                    current_signal, current_reason = -1, "趨勢多單SL"
+                elif close > trend_tp:
+                    trend_position = 0
+                    trend_entry = np.nan
+                    trend_sl = np.nan
+                    trend_tp = np.nan
+                    current_signal, current_reason = -1, "趨勢多單TP"
+            elif trend_position == -1:
+                if close > trend_sl:
+                    trend_position = 0
+                    trend_entry = np.nan
+                    trend_sl = np.nan
+                    trend_tp = np.nan
+                    current_signal, current_reason = 1, "趨勢空單SL"
+                elif close < trend_tp:
+                    trend_position = 0
+                    trend_entry = np.nan
+                    trend_sl = np.nan
+                    trend_tp = np.nan
+                    current_signal, current_reason = 1, "趨勢空單TP"
 
-        # === 出場條件===
-        elif current_position == 1:
-            if close < stop_loss:
-                current_position = 0
-                entry_price = np.nan
-                stop_loss = np.nan
-                take_profit = np.nan
-                current_signal = -1  # 訊號改為 -1，代表平倉
-                current_reason = "多單SL"
-            elif close > take_profit:
-                current_position = 0
-                entry_price = np.nan
-                stop_loss = np.nan
-                take_profit = np.nan
-                current_signal = -1  # 訊號改為 -1，代表平倉
-                current_reason = "多單TP"
-        elif current_position == -1:
-            if close < stop_loss:
-                current_position = 0
-                entry_price = np.nan
-                stop_loss = np.nan
-                take_profit = np.nan
-                current_signal = 1  # 訊號改為 -1，代表平倉
-                current_reason = "空單SL"
-            elif close > take_profit:
-                current_position = 0
-                entry_price = np.nan
-                stop_loss = np.nan
-                take_profit = np.nan
-                current_signal = 1  # 訊號改為 -1，代表平倉
-                current_reason = "空單TP"
+        # ============= 盤整策略處理 =============
+        if consolid_position == 0:
+            if rank < rank_th_2 and close <= ma and close <= upper:
+                if not allow_dual_position and trend_position != 0:
+                    trend_position = 0
+                    current_reason = "切換盤整多，先平趨勢倉"
+                consolid_position = 1
+                consolid_entry = close
+                consolid_sl = consolid_entry - ATR_multi_SL_2 * ATR
+                consolid_tp = consolid_entry + ATR_multi_TP_2 * ATR
+                current_signal, current_reason = 1, "盤整多單進場"
+            elif rank < rank_th_2 and close >= ma and close >= lower:
+                if not allow_dual_position and trend_position != 0:
+                    trend_position = 0
+                    current_reason = "切換盤整空，先平趨勢倉"
+                consolid_position = -1
+                consolid_entry = close
+                consolid_sl = consolid_entry + ATR_multi_SL_2 * ATR
+                consolid_tp = consolid_entry - ATR_multi_TP_2 * ATR
+                current_signal, current_reason = -1, "盤整空單進場"
+        else:
+            if consolid_position == 1:
+                if close < consolid_sl:
+                    consolid_position = 0
+                    consolid_entry = np.nan
+                    consolid_sl = np.nan
+                    consolid_tp = np.nan
+                    current_signal, current_reason = -1, "盤整多單SL"
+                elif close > consolid_tp:
+                    consolid_position = 0
+                    consolid_entry = np.nan
+                    consolid_sl = np.nan
+                    consolid_tp = np.nan
+                    current_signal, current_reason = -1, "盤整多單TP"
+            elif consolid_position == -1:
+                if close > consolid_sl:
+                    consolid_position = 0
+                    consolid_entry = np.nan
+                    consolid_sl = np.nan
+                    consolid_tp = np.nan
+                    current_signal, current_reason = 1, "盤整空單SL"
+                elif close < consolid_tp:
+                    consolid_position = 0
+                    consolid_entry = np.nan
+                    consolid_sl = np.nan
+                    consolid_tp = np.nan
+                    current_signal, current_reason = 1, "盤整空單TP"
 
+        # === 記錄當前行的數據 ===
+        total_position = trend_position + consolid_position  # 總倉位
         signals.append(current_signal)
-        positions.append(current_position) # Append the actual current_position
-        entry_prices.append(entry_price)
-        stop_losses.append(stop_loss)
-        take_profits.append(take_profit)
+        positions.append(total_position)
         reasons.append(current_reason)
+        trend_positions.append(trend_position)
+        consolid_positions.append(consolid_position)
+        
+        # 記錄進場價格和停損價格（每行一個值）
+        trend_entries.append(trend_entry)
+        trend_stops.append(trend_sl)
+        consolid_entries.append(consolid_entry)
+        consolid_stops.append(consolid_sl)
 
-    df['position'] = positions
-    df['entry_price'] = entry_prices
-    df['stop_loss'] = stop_losses
-    df['signal'] = signals
-    df['reason'] = reasons # 將原因欄位加入回傳的 DataFrame
+    # === 將結果添加到DataFrame ===
+    df["position"] = positions        # 總倉位 (回測套件讀取)
+    df["signal"] = signals            # 總訊號
+    df["reason"] = reasons
+    df["trend_position"] = trend_positions      # 額外追蹤
+    df["consolid_position"] = consolid_positions
+    
+    # 分別記錄趨勢和盤整的進場價格和停損價格
+    df['trend_entry_price'] = trend_entries
+    df['trend_stop_loss'] = trend_stops
+    df['consolid_entry_price'] = consolid_entries
+    df['consolid_stop_loss'] = consolid_stops
 
     return df
 
@@ -201,61 +260,70 @@ def generate_signals(df: pd.DataFrame, rank_th
 # =======================
 # 4. 主流程
 # =======================
-def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300
-                , bb_length: int = 20, mult: float = 2.0, lookback: int = 100
-                , rank_th: float = 85, ATR_period: int = 20
-                , ATR_multi_SL: float = 5.0, ATR_multi_TP: float = 8.0):
+def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300,
+                bb_length: int = 20, mult: float = 2.0, lookback: int = 100,
+                rank_th: float = 85, ATR_period: int = 20,
+                ATR_multi_SL: float = 5.0, ATR_multi_TP: float = 8.0,rank_th_2: int = 50,
+                ATR_multi_SL_2: float = 2.0, ATR_multi_TP_2: float = 1.0,
+                allow_dual_position: bool = True
+                ):
     df = get_binance_kline(symbol, interval, end_time, limit)
     df = calc_indicators(df, bb_length, mult, lookback, ATR_period)
-    df = generate_signals(df, rank_th, ATR_multi_SL, ATR_multi_TP)
+    df = generate_signals(df, rank_th, ATR_multi_SL, ATR_multi_TP,
+                          rank_th_2, ATR_multi_SL_2, ATR_multi_TP_2,
+                            allow_dual_position)
     return df
-
 
 # =======================
 # 測試範例
 # =======================
 if __name__ == "__main__":
-    df_signals = get_signals("BTCUSDT", "15m", datetime.now(), 300)
+    df_signals = get_signals("BTCUSDT", "15m", datetime.now(), 1000)
     print(df_signals[['timestamp', 'close', 'position', 'signal', 'ATR']].tail(30))
 
+# =======================
+# 測試使用backtest_usage
+# =======================
+# from Technicalindicatorstrategy import bbrank,bbrank_1,bbrank_2
+# import warnings 
+# warnings.filterwarnings('ignore')
+# from Backtest.backtest import backtest_signals
+# from Plot.plot import display_trades_log_as_html,plot_backtest_result
+# from IPython.display import HTML
+# import pandas as pd
+# from datetime import datetime,timedelta
+# import warnings 
+# warnings.filterwarnings('ignore')
+# import numpy as np
+# np.random.seed(42)  # ✅ 固定隨機性（可重現性）
+# import random
+# random.seed(42)
 
+# df_signals = bbrank.get_signals('ETHUSDT','1h',datetime.now(),5000, 
+#                                 lookback = 300, 
+#                                 rank_th = 90,
+#                                 ATR_multi_SL = 1.75, ATR_multi_TP = 5.0,
+#                                 rank_th_2 = 50,
+#                                 ATR_multi_SL_2 = 1.0, ATR_multi_TP_2 = 2.0,
+#                                 allow_dual_position = True)
 
-from Technicalindicatorstrategy import bbrank
-import warnings 
-warnings.filterwarnings('ignore')
-from Backtest.backtest import backtest_signals
-from Plot.plot import display_trades_log_as_html,plot_backtest_result
-from IPython.display import HTML
-import pandas as pd
-from datetime import datetime,timedelta
-import warnings 
-warnings.filterwarnings('ignore')
-import numpy as np
-np.random.seed(42)  # ✅ 固定隨機性（可重現性）
-import random
-random.seed(42)
-
-df_signals = bbrank.get_signals('ETHUSDT','1h',datetime.now(),3000, 
-                                lookback = 300, rank_th = 90,
-                                ATR_multi_SL = 2.0, ATR_multi_TP = 10.0)
-
-result = backtest_signals(
-    df_signals.copy(),
-    initial_capital = 1000000, # 1000台幣
-    fee_rate = 0.000, # 合約手續費
-    leverage = 2, # 槓桿
-    allow_short = True, # 是否做空
-    stop_loss = None,       # 停損閾值，例如0.05代表5%
-    take_profit = None,     # 停利閾值
-    capital_ratio = 1, # 每次使用的資金佔比
-    max_hold_bars = 100000,# 最大持有K棒數
-    delay_entry=False,
-    risk_free_rate=0
-    )  
-display(pd.DataFrame(result['Overview performance'],index=['Overview performance']))
-display(pd.DataFrame(result['Trades analysis'],index=['Trades analysis']))
-display(pd.DataFrame(result['Risk/performance ratios'],index=['Risk/performance ratios']))
-html_output = display_trades_log_as_html(result['trades_log'][-10:])
-plot_backtest_result(result)
-display(HTML(html_output))
-display(df_signals.loc[df_signals['signal']!=0,['timestamp','signal','close','reason','stop_loss']].tail(10).style.background_gradient())
+# result = backtest_signals(
+#     df_signals.copy(),
+#     initial_capital = 1000000, # 1000台幣
+#     fee_rate = 0.0004, # 合約手續費
+#     leverage = 1, # 槓桿
+#     allow_short = True, # 是否做空
+#     stop_loss = None,       # 停損閾值，例如0.05代表5%
+#     take_profit = None,     # 停利閾值
+#     capital_ratio = 1, # 每次使用的資金佔比
+#     max_hold_bars = 10000,# 最大持有K棒數
+#     delay_entry=False,
+#     risk_free_rate=0
+#     )  
+# display(pd.DataFrame(result['Overview performance'],index=['Overview performance']))
+# display(pd.DataFrame(result['Trades analysis'],index=['Trades analysis']))
+# display(pd.DataFrame(result['Risk/performance ratios'],index=['Risk/performance ratios']))
+# html_output = display_trades_log_as_html(result['trades_log'][:10])
+# plot_backtest_result(result)
+# display(HTML(html_output))
+# display(df_signals.loc[df_signals['signal']!=0,['timestamp','signal','close','reason']].head(100).style.background_gradient())
