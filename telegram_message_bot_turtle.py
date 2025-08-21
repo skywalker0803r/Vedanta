@@ -49,7 +49,7 @@ def main():
     for symbol in top_symbols:
         print(f"分析 {symbol}...")
         try:
-            result = turtle_strategy_filter.get_signals(symbol=symbol, interval='1d', end_time=datetime.now(), limit = 100).tail(1)
+            result = turtle_strategy_filter.get_signals(symbol=symbol, interval='1h', end_time=datetime.now(), limit = 100).tail(1)
             if result["signal"].values[0] == 1:
                 print(f"{symbol} 多單訊號 - 海龜多單 原因:{result['reason'].values[0]} 進場價格:{result['entry_price'].values[0]} 停損:{result['stop_loss'].values[0]}")
                 long_symbols.append(f"{symbol} (海龜多單) 原因:{result['reason'].values[0]} 進場價格:{result['entry_price'].values[0]} 停損:{result['stop_loss'].values[0]}")
