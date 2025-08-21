@@ -51,11 +51,11 @@ def main():
         try:
             result = vegas.get_signals(symbol=symbol, interval='1h', end_time=datetime.now(), limit = 1000).tail(1)
             if result["signal"].values[0] == 1:
-                print(f"{symbol} 多單訊號 - {result['long_type'].values[0]}")
-                long_symbols.append(f"{symbol} ({result['long_type'].values[0]})")
+                print(f"{symbol} 多單訊號 - {result['long_type'].values[0]} 進場價格:{result['close'].values[0]}")
+                long_symbols.append(f"{symbol} ({result['long_type'].values[0]}) 進場價格:{result['close'].values[0]}")
             if result["signal"].values[0] == -1:
-                print(f"{symbol} 空單訊號 - {result['short_type'].values[0]}")
-                short_symbols.append(f"{symbol} ({result['short_type'].values[0]})")
+                print(f"{symbol} 空單訊號 - {result['short_type'].values[0]} 進場價格:{result['close'].values[0]}")
+                short_symbols.append(f"{symbol} ({result['short_type'].values[0]}) 進場價格:{result['close'].values[0]}")
         except Exception as e:
             print(f"{symbol} 分析失敗: {e}")
         time.sleep(0.5)
