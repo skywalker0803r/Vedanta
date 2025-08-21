@@ -7,6 +7,6 @@ subprocess.run(["python", "telegram_message_bot_turtle.py"])
 subprocess.run(["python", "turtle_run.py"])
 
 # 執行 vegas訊號機器人.py 綜合海龜訊號判斷
-#subprocess.run(["python", "telegram_message_bot_vegas.py"])
+subprocess.run(["python", "telegram_message_bot_vegas.py"])
 
 
