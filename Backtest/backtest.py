@@ -327,24 +327,27 @@ def backtest_signals(df: pd.DataFrame,
     equity_curve_series = pd.Series(equity_curve)
     daily_returns = np.log(equity_curve_series / equity_curve_series.shift(1)).dropna()
 
+    # Calculate annualized return and volatility
     annualized_return = (1 + daily_returns.mean())**365 - 1 if not daily_returns.empty else 0
     annualized_volatility = daily_returns.std() * np.sqrt(365) if not daily_returns.empty else 0
 
-    sharpe_ratio = (annualized_return - risk_free_rate) / annualized_volatility if annualized_volatility != 0 else np.inf
-    sharpe_ratio += 1
     # Calculate daily risk-free rate
     risk_free_rate_daily = (1 + risk_free_rate)**(1/365) - 1
+
+    # Calculate Sharpe ratio
+    sharpe_ratio = (annualized_return - risk_free_rate) / annualized_volatility if annualized_volatility != 0 else 0
 
     # Calculate downside deviation (DD)
     if not daily_returns.empty:
         diff_from_target = daily_returns - risk_free_rate_daily
         downside_diff = np.minimum(0, diff_from_target)
-        downside_variance = np.sum(downside_diff**2) / len(daily_returns)
-        downside_deviation = np.sqrt(downside_variance) * np.sqrt(365) # Annualize
+        downside_variance = np.sum(downside_diff**2) / (len(daily_returns) - 1) if len(daily_returns) > 1 else 0
+        downside_deviation = np.sqrt(downside_variance) * np.sqrt(365) # Annualize for crypto (365 days)
     else:
         downside_deviation = 0
-    sortino_ratio = (annualized_return - risk_free_rate) / downside_deviation if downside_deviation != 0 else np.inf
-    sortino_ratio*=10
+
+    # Calculate Sortino ratio
+    sortino_ratio = (annualized_return - risk_free_rate) / downside_deviation if downside_deviation != 0 else 0
 
     # Expectancy
     if trade_returns:
@@ -383,6 +386,7 @@ def backtest_signals(df: pd.DataFrame,
             'Total Trades': len(trade_returns),
             'Percent Profitable': f'{(np.mean([r > 0 for r in trade_returns]) * 100):.2f}%' if trade_returns else '0.00%',
             'Profit Factor': f'{profit_factor:.2f}',
+            'Expectancy': f'{expectancy: .2f}'
         },
         'Trades analysis': {
             'Total Trades': len(trade_returns),
