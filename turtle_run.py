@@ -9,7 +9,7 @@ auto_trade_futures(
     leverage=7,#槓桿
     strategy=TurtleMACDTimeZoneFilter,# 策略
     stop_loss = None,       # 停損閾值，例如0.05代表5%
-    take_profit = None,     # 停利閾值
+    take_profit = 0.04,     # 停利閾值
     max_hold_bars=100000,# 最大持有K棒數
     run_once=True #單次執行模式
 )
@@ -22,7 +22,7 @@ auto_trade_futures(
     leverage=7,#槓桿
     strategy=TurtleMACDTimeZoneFilter,# 策略
     stop_loss = None,       # 停損閾值，例如0.05代表5%
-    take_profit = None,     # 停利閾值
+    take_profit = 0.04,     # 停利閾值
     max_hold_bars=100000,# 最大持有K棒數
     run_once=True #單次執行模式
 )
@@ -35,7 +35,7 @@ auto_trade_futures(
     leverage=7,#槓桿
     strategy=TurtleMACDTimeZoneFilter,# 策略
     stop_loss = None,       # 停損閾值，例如0.05代表5%
-    take_profit = None,     # 停利閾值
+    take_profit = 0.04,     # 停利閾值
     max_hold_bars=100000,# 最大持有K棒數
     run_once=True #單次執行模式
 )
@@ -49,7 +49,7 @@ auto_trade_futures(
     leverage=7,#槓桿
     strategy=TurtleMACDTimeZoneFilter,# 策略
     stop_loss = None,       # 停損閾值，例如0.05代表5%
-    take_profit = None,     # 停利閾值
+    take_profit = 0.04,     # 停利閾值
     max_hold_bars=100000,# 最大持有K棒數
     run_once=True #單次執行模式
 )
@@ -63,7 +63,7 @@ auto_trade_futures(
     leverage=7,#槓桿
     strategy=TurtleMACDTimeZoneFilter,# 策略
     stop_loss = None,       # 停損閾值，例如0.05代表5%
-    take_profit = None,     # 停利閾值
+    take_profit = 0.04,     # 停利閾值
     max_hold_bars=100000,# 最大持有K棒數
     run_once=True #單次執行模式
 )
