@@ -1,0 +1,68 @@
+//@version=5
+strategy(title="Turtle MACD Time-Zone Filter", shorttitle="T-MACD", overlay=true, initial_capital=10000, margin_long=10,margin_short=10,default_qty_type=strategy.percent_of_equity, default_qty_value=700)
+
+// ----------------------
+// 1. INPUTS
+// ----------------------
+atr_period = input.int(20, title="ATR Period", minval=1)
+entry_period = input.int(20, title="Entry Period (Donchian)", minval=1)
+atr_multiplier = input.float(2.0, title="Stop Loss ATR Multiplier", minval=0.1)
+
+// MACD Inputs
+fast_length = input.int(12, title="MACD Fast Length", minval=1)
+slow_length = input.int(26, title="MACD Slow Length", minval=1)
+signal_length = input.int(9, title="MACD Signal Length", minval=1)
+
+// Time Filter Inputs (Taipei Time, UTC+8)
+start_hour_taipei = input.int(22, title="Entry Start Hour (Taipei)", minval=0, maxval=23)
+end_hour_taipei = input.int(0, title="Entry End Hour (Taipei)", minval=0, maxval=23) // Note: 00:00 next day
+
+// ----------------------
+// 2. INDICATOR CALCULATION
+// ----------------------
+// Calculate ATR
+atr = ta.atr(atr_period)
+
+// Calculate 20-period High/Low (Donchian Channel)
+highest_high = ta.highest(high, entry_period)
+lowest_low = ta.lowest(low, entry_period)
+
+// Calculate MACD Histogram
+[macd_line, signal_line, macd_hist] = ta.macd(close, fast_length, slow_length, signal_length)
+
+// ----------------------
+// 3. TRADING LOGIC
+// ----------------------
+// Get current time in Taipei timezone (correct usage)
+is_taipei_entry_time = (hour(time, "Asia/Taipei") >= start_hour_taipei and hour(time, "Asia/Taipei") <= 23) or (hour(time, "Asia/Taipei") == end_hour_taipei)
+
+// --- ENTRY LOGIC ---
+long_condition = close > highest_high[1]
+short_condition = close < lowest_low[1]
+
+// Long Entry
+if long_condition and strategy.position_size == 0 and is_taipei_entry_time
+    strategy.entry("Long", strategy.long)
+
+// Short Entry
+if short_condition and strategy.position_size == 0 and is_taipei_entry_time
+    strategy.entry("Short", strategy.short)
+
+// --- EXIT LOGIC ---
+// MACD reversal exit
+if strategy.position_size > 0 and macd_hist < macd_hist[1]
+    strategy.close("Long", comment="MACD Reversal Exit")
+
+if strategy.position_size < 0 and macd_hist > macd_hist[1]
+    strategy.close("Short", comment="MACD Reversal Exit")
+
+// ATR Stop Loss
+long_stop_loss_price = strategy.opentrades.entry_price(0) - atr * atr_multiplier
+short_stop_loss_price = strategy.opentrades.entry_price(0) + atr * atr_multiplier
+
+// Place stop orders
+if strategy.position_size > 0
+    strategy.exit("Stop Loss", from_entry="Long", stop=long_stop_loss_price, comment="ATR Stop Loss")
+
+if strategy.position_size < 0
+    strategy.exit("Stop Loss", from_entry="Short", stop=short_stop_loss_price, comment="ATR Stop Loss")
