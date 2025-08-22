@@ -17,6 +17,10 @@ signal_length = input.int(9, title="MACD Signal Length", minval=1)
 start_hour_taipei = input.int(22, title="Entry Start Hour (Taipei)", minval=0, maxval=23)
 end_hour_taipei = input.int(0, title="Entry End Hour (Taipei)", minval=0, maxval=23) // Note: 00:00 next day
 
+// Take-Profit Inputs
+take_profit_percent = input.float(4.0, title="Take Profit %", minval=0.1)
+leverage_multiplier = input.float(7.0, title="Leverage Multiplier", minval=1.0)
+
 // ----------------------
 // 2. INDICATOR CALCULATION
 // ----------------------
@@ -49,6 +53,11 @@ if short_condition and strategy.position_size == 0 and is_taipei_entry_time
     strategy.entry("Short", strategy.short)
 
 // --- EXIT LOGIC ---
+
+// Calculate Take Profit prices
+long_tp_price = strategy.opentrades.entry_price(0) * (1 + (take_profit_percent / 100) * leverage_multiplier)
+short_tp_price = strategy.opentrades.entry_price(0) * (1 - (take_profit_percent / 100) * leverage_multiplier)
+
 // MACD reversal exit
 if strategy.position_size > 0 and macd_hist < macd_hist[1]
     strategy.close("Long", comment="MACD Reversal Exit")
@@ -62,7 +71,7 @@ short_stop_loss_price = strategy.opentrades.entry_price(0) + atr * atr_multiplie
 
 // Place stop orders
 if strategy.position_size > 0
-    strategy.exit("Stop Loss", from_entry="Long", stop=long_stop_loss_price, comment="ATR Stop Loss")
+    strategy.exit("Long Exit", from_entry="Long", stop=long_stop_loss_price, limit=long_tp_price, comment="ATR Stop Loss / Take Profit")
 
 if strategy.position_size < 0
-    strategy.exit("Stop Loss", from_entry="Short", stop=short_stop_loss_price, comment="ATR Stop Loss")
+    strategy.exit("Short Exit", from_entry="Short", stop=short_stop_loss_price, limit=short_tp_price, comment="ATR Stop Loss / Take Profit")
