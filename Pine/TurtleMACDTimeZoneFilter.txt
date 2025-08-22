@@ -18,7 +18,7 @@ start_hour_taipei = input.int(22, title="Entry Start Hour (Taipei)", minval=0, m
 end_hour_taipei = input.int(0, title="Entry End Hour (Taipei)", minval=0, maxval=23) // Note: 00:00 next day
 
 // Take-Profit Inputs
-take_profit_percent = input.float(4.0, title="Take Profit %", minval=0.1)
+take_profit_percent = input.float(3.5, title="Take Profit %", minval=0.1)
 leverage_multiplier = input.float(7.0, title="Leverage Multiplier", minval=1.0)
 
 // ----------------------
