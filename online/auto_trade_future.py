@@ -147,14 +147,6 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h",
             close_price = latest['close']
             signal = latest['signal']
             
-            # 如果沒設止損則看策略本身是否帶止損 有的話就用策略止損替換None
-            if stop_loss == None:
-                if pd.notna(latest['stop_loss']):
-                    stop_loss = latest['stop_loss']
-                else:
-                    stop_loss = None
-                    print('沒設止損 策略也沒有止損')
-            
             print(f"📈 最新收盤價: {close_price:.2f}, 訊號: {signal}")
 
             position_amt, position_side, entry_price, entry_time = get_position(client, symbol)
