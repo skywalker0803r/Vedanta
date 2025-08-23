@@ -3,7 +3,7 @@ import os
 import time
 from datetime import datetime
 from dotenv import load_dotenv
-
+import pandas as pd
 load_dotenv()
 
 # 創立幣安客端
@@ -149,9 +149,9 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h",
             
             # 如果沒設止損則看策略本身是否帶止損 有的話就用策略止損替換None
             if stop_loss == None:
-                try:
+                if pd.notna(latest['stop_loss']):
                     stop_loss = latest['stop_loss']
-                except:
+                else:
                     stop_loss = None
                     print('沒設止損 策略也沒有止損')
             
