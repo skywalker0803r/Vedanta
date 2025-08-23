@@ -130,7 +130,7 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
                 stop_loss = np.nan
                 current_signal = -1  # 訊號改為 -1，代表平倉
                 current_reason = "多單平倉"
-            elif current_close < stop_loss:
+            elif not np.isnan(stop_loss) and current_close < stop_loss:
                 current_position = 0
                 entry_price = np.nan
                 stop_loss = np.nan
@@ -144,7 +144,7 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
                 stop_loss = np.nan
                 current_signal = 1  # 訊號改為 1，代表平倉
                 current_reason = "空單平倉"
-            elif current_close > stop_loss:
+            elif not np.isnan(stop_loss) and current_close > stop_loss:
                 current_position = 0
                 entry_price = np.nan
                 stop_loss = np.nan

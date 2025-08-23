@@ -97,14 +97,14 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
         # --- 判斷出場 ---
         if current_position == 1:  # 多單持倉
             # 跌破 10 日低或觸發停損
-            if current_close < low_10 or current_close < stop_loss:
+            if current_close < low_10 or (not np.isnan(stop_loss) and current_close < stop_loss):
                 current_position = 0
                 entry_price = np.nan
                 stop_loss = np.nan
                 current_signal = -1  # 訊號改為 -1，代表平倉
         elif current_position == -1:  # 空單持倉
             # 突破 10 日高或觸發停損
-            if current_close > high_10 or current_close > stop_loss:
+            if current_close > high_10 or (not np.isnan(stop_loss) and current_close > stop_loss):
                 current_position = 0
                 entry_price = np.nan
                 stop_loss = np.nan
