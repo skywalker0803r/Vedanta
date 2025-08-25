@@ -116,7 +116,7 @@ def cancel_all_open_orders(client, symbol):
 def align_to_interval(dt, interval_sec):
     ts = int(dt.timestamp())
     aligned_ts = ts - (ts % interval_sec)
-    return datetime.utcfromtimestamp(aligned_ts)
+    return datetime.fromtimestamp(aligned_ts, tz=timezone.utc)
 
 # 主程序
 def auto_trade_futures(symbol="ETH/USDT", interval="1h",
