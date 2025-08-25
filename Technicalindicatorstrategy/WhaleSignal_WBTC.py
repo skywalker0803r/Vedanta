@@ -1,6 +1,6 @@
 import pandas as pd
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 import os
 from dotenv import load_dotenv
@@ -114,7 +114,7 @@ def map_wallet_to_signals(df_tx, wallet_address):
 # ---------------- 統一抓取交易信號 ----------------
 def get_all_signals(symbol: str, wallet_address=TARGET_WALLET, erc20=False, token_list=None, start_time=None, end_time=None):
     if end_time is None:
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
     if start_time is None:
         start_time = end_time - timedelta(days=365)  # 預設抓最近一年
 

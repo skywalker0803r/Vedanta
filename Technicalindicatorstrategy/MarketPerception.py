@@ -17,7 +17,7 @@ from typing import Callable, Dict, Optional
 import numpy as np
 import pandas as pd
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 
 # ------------------------------------------------------------
@@ -195,5 +195,5 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
 # Example usage
 # ------------------------------------------------------------
 if __name__ == "__main__":
-    out = get_signals("BTCUSDT", "1d", datetime.utcnow(), limit=500)
+    out = get_signals("BTCUSDT", "1d", datetime.now(timezone.utc), limit=500)
     print(out.tail(50))

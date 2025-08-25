@@ -1,6 +1,6 @@
 import pandas as pd
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import time
 
 def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limit: int = 3000) -> pd.DataFrame:
@@ -162,6 +162,6 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300
 if __name__ == "__main__":
     symbol = "BTCUSDT"
     interval = "1h"
-    end_time = datetime.utcnow()
+    end_time = datetime.now(timezone.utc)
     df_signals = get_signals_macd(symbol, interval, end_time, limit=1000)
     print(df_signals.tail(10))
