@@ -1,6 +1,6 @@
 import pandas as pd
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 import numpy as np
 import time
 
@@ -187,6 +187,6 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
 if __name__ == "__main__":
     symbol = "BTCUSDT"
     interval = "1h"
-    end_time = datetime.utcnow()
+    end_time = datetime.now(timezone.utc)
     df_signals = get_signals(symbol, interval, end_time, limit=500)
     print(df_signals[['timestamp', 'close', 'position', 'signal', 'MACDh']].tail(30))
