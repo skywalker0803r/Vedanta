@@ -323,31 +323,68 @@ def backtest_signals(df: pd.DataFrame,
 
     buy_and_hold_return = (df['buy_and_hold'].iloc[-1] / initial_capital - 1) * 100
 
-    # New calculations for comprehensive metrics
+     # ----- Calculate log returns from equity and infer periods_per_year from timestamps -----
     equity_curve_series = pd.Series(equity_curve)
-    daily_returns = np.log(equity_curve_series / equity_curve_series.shift(1)).dropna()
+    # Use log returns for stable compounding calculations
+    log_returns = np.log(equity_curve_series / equity_curve_series.shift(1)).dropna()
 
-    # Calculate annualized return and volatility
-    annualized_return = (1 + daily_returns.mean())**365 - 1 if not daily_returns.empty else 0
-    annualized_volatility = daily_returns.std() * np.sqrt(365) if not daily_returns.empty else 0
+    # Estimate periods per year based on average timestamp interval
+    try:
+        avg_seconds = df['timestamp'].diff().dt.total_seconds().dropna().mean()
+        if np.isnan(avg_seconds) or avg_seconds <= 0:
+            periods_per_year = 365.0  # fallback to daily assumption
+        else:
+            periods_per_year = (365.0 * 24.0 * 3600.0) / avg_seconds
+    except Exception:
+        periods_per_year = 365.0
 
-    # Calculate daily risk-free rate
-    risk_free_rate_daily = (1 + risk_free_rate)**(1/365) - 1
-
-    # Calculate Sharpe ratio
-    sharpe_ratio = (annualized_return - risk_free_rate) / annualized_volatility if annualized_volatility != 0 else 0
-
-    # Calculate downside deviation (DD)
-    if not daily_returns.empty:
-        diff_from_target = daily_returns - risk_free_rate_daily
-        downside_diff = np.minimum(0, diff_from_target)
-        downside_variance = np.sum(downside_diff**2) / (len(daily_returns) - 1) if len(daily_returns) > 1 else 0
-        downside_deviation = np.sqrt(downside_variance) * np.sqrt(365) # Annualize for crypto (365 days)
+    # Handle empty returns (e.g., no trades)
+    if log_returns.empty:
+        annualized_return = 0.0
+        annualized_volatility = 0.0
+        sharpe_ratio = 0.0
+        sortino_ratio = 0.0
     else:
-        downside_deviation = 0
+        # Mean and standard deviation of log returns
+        mean_log_return = log_returns.mean()
+        std_log_return = log_returns.std(ddof=1)  # sample std (ddof=1)
 
-    # Calculate Sortino ratio
-    sortino_ratio = (annualized_return - risk_free_rate) / downside_deviation if downside_deviation != 0 else 0
+        # Annualized return: convert log mean back to compounded simple return
+        annualized_return = np.exp(mean_log_return * periods_per_year) - 1.0
+
+        # Annualized volatility based on log returns
+        annualized_volatility = std_log_return * np.sqrt(periods_per_year)
+
+        # Sharpe ratio: (annualized return - risk-free rate) / annualized volatility
+        if annualized_volatility > 0:
+            sharpe_ratio = (annualized_return - risk_free_rate) / annualized_volatility
+        else:
+            sharpe_ratio = 0.0
+
+        # --- Sortino ratio ---
+        # Convert log returns to simple daily returns
+        daily_simple = np.expm1(log_returns)  # exp(log_r) - 1
+
+        # Convert annual risk-free rate to per-period simple risk-free return
+        rf_daily = (1.0 + risk_free_rate) ** (1.0 / periods_per_year) - 1.0
+
+        # Downside differences: only returns below risk-free threshold
+        downside_diff = np.minimum(0.0, daily_simple - rf_daily)
+
+        # Downside variance (sample variance, ddof=1)
+        if len(downside_diff) > 1:
+            downside_variance = np.sum(downside_diff ** 2) / (len(downside_diff) - 1)
+        else:
+            downside_variance = 0.0
+
+        # Annualized downside deviation
+        downside_deviation = np.sqrt(downside_variance) * np.sqrt(periods_per_year)
+
+        # Sortino ratio: (annualized return - risk-free rate) / annualized downside deviation
+        if downside_deviation > 0:
+            sortino_ratio = (annualized_return - risk_free_rate) / downside_deviation
+        else:
+            sortino_ratio = 0.0
 
     # Expectancy
     if trade_returns:
@@ -386,7 +423,7 @@ def backtest_signals(df: pd.DataFrame,
             'Total Trades': len(trade_returns),
             'Percent Profitable': f'{(np.mean([r > 0 for r in trade_returns]) * 100):.2f}%' if trade_returns else '0.00%',
             'Profit Factor': f'{profit_factor:.2f}',
-            'Expectancy': f'{expectancy: .2f}'
+            'Expectancy': f'{expectancy: .4f}'
         },
         'Trades analysis': {
             'Total Trades': len(trade_returns),
