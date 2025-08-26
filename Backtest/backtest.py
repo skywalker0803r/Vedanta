@@ -412,5 +412,11 @@ def backtest_signals(df: pd.DataFrame,
             'position': df['position'].tolist(),
             'trade_returns': np.array(trade_returns) * 100,
         },
+        'metric':{
+            '總報酬率':(net_profit_usdt / initial_capital),
+            '最大回撤':max_dd,
+            
+        },
+        
         'trades_log': trades_log
     }
