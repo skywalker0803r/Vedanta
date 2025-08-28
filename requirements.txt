@@ -11,3 +11,4 @@ google-cloud-core
 google-generativeai
 python-binance 
 ta 
+jinja2
