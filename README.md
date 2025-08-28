@@ -86,6 +86,7 @@ Vedanta 是一個簡潔實用的加密貨幣交易策略回測與自動化交易
 1.  **運行 Jupyter Notebooks:**
     *   打開 `backtest_usage.ipynb` 或 `online_usage.ipynb` 以了解如何導入和使用不同的策略、生成信號、運行回測以及繪製結果圖表。
 2.  **配置線上交易 (可選):**
+    複製 `.env-example` 為 `.env`，並填入您的 API 密鑰。
     *   如果需要進行線上自動交易，請根據 `online/` 目錄下的模組和 `run.py` 的範例，配置相關的 API 密鑰和交易參數。
 
 ## 依賴套件
