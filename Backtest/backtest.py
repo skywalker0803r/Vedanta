@@ -448,11 +448,11 @@ def backtest_signals(df: pd.DataFrame,
             'position': df['position'].tolist(),
             'trade_returns': np.array(trade_returns) * 100,
         },
-        'metric':{
-            '總報酬率':(net_profit_usdt / initial_capital),
-            '最大回撤':max_dd,
-            
-        },
-        
-        'trades_log': trades_log
+        'trades_log': trades_log,
+        'float_type_metrics': {  # 新增的字典，存儲浮點數
+            'Expectancy': float(expectancy) if expectancy is not None else 0.0000,
+            'Max Drawdown': float(max_dd) if max_dd is not None else 0.0000,
+            'Sharpe Ratio': float(sharpe_ratio) if sharpe_ratio is not None else 0.00,
+            'Sortino Ratio': float(sortino_ratio) if sortino_ratio is not None else 0.00,
+        }
     }
