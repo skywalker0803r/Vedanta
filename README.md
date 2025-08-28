@@ -64,15 +64,28 @@ Vedanta 是一個簡潔實用的加密貨幣交易策略回測與自動化交易
     -   `testsma.py`: 簡單移動平均線 (SMA) 交叉策略的測試實例，展示了如何從幣安獲取 K 線數據並生成交易信號。
     -   `williams.py`: 威廉指標 (%R) 策略，用於判斷超買超賣。
 
-## 如何使用
+## 如何安裝環境
+### 普通Python安裝
 
-1.  **安裝依賴套件:**
+1. **安裝python**
+    請確保您的系統上已安裝 Python 3.10 以上版本。您可以從 [Python 官方網站](https://www.python.org/downloads/) 下載並安裝。
+
+
+2. **安裝依賴套件:**
     ```bash
     pip install -r requirements.txt
     ```
-2.  **運行 Jupyter Notebooks:**
+
+### uv安裝(選擇性)
+    ```bash
+    uv sync 
+    ```
+
+## 如何使用
+
+1.  **運行 Jupyter Notebooks:**
     *   打開 `backtest_usage.ipynb` 或 `online_usage.ipynb` 以了解如何導入和使用不同的策略、生成信號、運行回測以及繪製結果圖表。
-3.  **配置線上交易 (可選):**
+2.  **配置線上交易 (可選):**
     *   如果需要進行線上自動交易，請根據 `online/` 目錄下的模組和 `run.py` 的範例，配置相關的 API 密鑰和交易參數。
 
 ## 依賴套件
