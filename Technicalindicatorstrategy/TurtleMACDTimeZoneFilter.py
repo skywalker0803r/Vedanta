@@ -76,18 +76,18 @@ def calculate_macd(close_series, fast_period=12, slow_period=26, signal_period=9
 
     return macd_hist
 
-def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100):
+def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100, atr_period: int = 20, fast_period: int = 12, slow_period: int = 26, signal_period: int = 9, high_low_lookback: int = 20, atr_multiplier_sl: float = 2.0):
     df = get_binance_kline(symbol, interval, end_time, limit)
 
     # 計算高低點，並移位避免用到當根
-    df['20_high'] = df['high'].rolling(window=20).max().shift(1)
-    df['20_low'] = df['low'].rolling(window=20).min().shift(1)
+    df[f'{high_low_lookback}_high'] = df['high'].rolling(window=high_low_lookback).max().shift(1)
+    df[f'{high_low_lookback}_low'] = df['low'].rolling(window=high_low_lookback).min().shift(1)
 
     # 計算 ATR，並移位避免看未來
-    df['ATR'] = calculate_atr(df, 20).shift(1)
+    df['ATR'] = calculate_atr(df, atr_period).shift(1)
 
     # 手動計算 MACD 柱狀體並加入 DataFrame
-    df['MACDh'] = calculate_macd(df['close'])
+    df['MACDh'] = calculate_macd(df['close'], fast_period, slow_period, signal_period)
 
     # 初始狀態
     current_position = 0 # 追蹤當前倉位
@@ -114,8 +114,8 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
 
         current_close = df.loc[i, 'close']
         atr = df.loc[i, 'ATR']
-        high_20 = df.loc[i, '20_high']
-        low_20 = df.loc[i, '20_low']
+        high_20 = df.loc[i, f'{high_low_lookback}_high']
+        low_20 = df.loc[i, f'{high_low_lookback}_low']
         macd_hist = df.loc[i, 'MACDh']
         current_time_taipei = df.loc[i, 'timestamp'] # 取得當前 K 棒的台北時間
 
@@ -158,13 +158,13 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
             if current_close > high_20:  # 突破 20 日高
                 current_position = 1
                 entry_price = current_close
-                stop_loss = entry_price - 2 * atr
+                stop_loss = entry_price - atr_multiplier_sl * atr
                 current_signal = 1  # 訊號改為 1，代表開多
                 current_reason = "多單進場"
             elif current_close < low_20:  # 跌破 20 日低
                 current_position = -1
                 entry_price = current_close
-                stop_loss = entry_price + 2 * atr
+                stop_loss = entry_price + atr_multiplier_sl * atr
                 current_signal = -1  # 訊號改為 -1，代表開空
                 current_reason = "空單進場"
 
