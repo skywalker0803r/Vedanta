@@ -4,14 +4,14 @@ strategy(title="Turtle MACD Time-Zone Filter", shorttitle="T-MACD", overlay=true
 // ----------------------
 // 1. INPUTS
 // ----------------------
-atr_period = input.int(20, title="ATR Period", minval=1)
-entry_period = input.int(20, title="Entry Period (Donchian)", minval=1)
-atr_multiplier = input.float(2.0, title="Stop Loss ATR Multiplier", minval=0.1)
+atr_period = input.int(14, title="ATR Period", minval=1)
+entry_period = input.int(22, title="Entry Period (Donchian)", minval=1)
+atr_multiplier = input.float(2.9, title="Stop Loss ATR Multiplier", minval=0.1)
 
 // MACD Inputs
-fast_length = input.int(12, title="MACD Fast Length", minval=1)
-slow_length = input.int(26, title="MACD Slow Length", minval=1)
-signal_length = input.int(9, title="MACD Signal Length", minval=1)
+fast_length = input.int(14, title="MACD Fast Length", minval=1)
+slow_length = input.int(25, title="MACD Slow Length", minval=1)
+signal_length = input.int(15, title="MACD Signal Length", minval=1)
 
 // Time Filter Inputs (Taipei Time, UTC+8)
 start_hour_taipei = input.int(22, title="Entry Start Hour (Taipei)", minval=0, maxval=23)
