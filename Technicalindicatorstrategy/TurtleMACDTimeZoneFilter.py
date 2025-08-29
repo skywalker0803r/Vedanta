@@ -76,7 +76,7 @@ def calculate_macd(close_series, fast_period=12, slow_period=26, signal_period=9
 
     return macd_hist
 
-def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100, atr_period: int = 20, fast_period: int = 12, slow_period: int = 26, signal_period: int = 9, high_low_lookback: int = 20, atr_multiplier_sl: float = 2.0):
+def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100, atr_period: int = 14, fast_period: int = 14, slow_period: int = 25, signal_period: int = 15, high_low_lookback: int = 22, atr_multiplier_sl: float = 2.9):
     df = get_binance_kline(symbol, interval, end_time, limit)
 
     # 計算高低點，並移位避免用到當根
