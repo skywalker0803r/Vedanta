@@ -2,6 +2,19 @@ import numpy as np
 import pandas as pd
 import warnings
 
+def round_price(price, precision=8):
+    """
+    Round price to specified precision to avoid floating point errors
+    
+    Args:
+        price (float): Price to round
+        precision (int): Number of decimal places (default: 8)
+    
+    Returns:
+        float: Rounded price
+    """
+    return round(price, precision)
+
 def backtest_signals(df: pd.DataFrame,
                      initial_capital=1000000,
                      fee_rate=0.000,
@@ -16,7 +29,8 @@ def backtest_signals(df: pd.DataFrame,
                      liquidation_penalty=1.0,
                      delay_entry=True,
                      risk_free_rate=0.02,
-                     interval: str = ''):
+                     interval: str = '',
+                     price_precision=8):
     """
     Simulates a trading strategy with a "worst-case" scenario for stop-loss and take-profit.
     If both conditions are met within the same bar, the stop-loss is always triggered.
@@ -38,6 +52,7 @@ def backtest_signals(df: pd.DataFrame,
     - risk_free_rate (float): Annualized risk-free rate (e.g., 0.02 for 2%).
     - interval (str): Data interval (e.g., '1h' for hourly). If provided, uses predefined periods_per_year; else infers from timestamps.
       Supported: '1m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d'.
+    - price_precision (int): Number of decimal places for price rounding (default: 8).
     
     Returns:
     - dict: A dictionary containing performance metrics, figure data, and a trade log.
@@ -127,34 +142,34 @@ def backtest_signals(df: pd.DataFrame,
                 should_exit = True
                 exit_reason = 'Stop Loss (Worst Case)'
                 if entry_position > 0:
-                    exit_price = sl_price_long * (1 - fee_rate) * sell_slip
+                    exit_price = round_price(sl_price_long * (1 - fee_rate) * sell_slip, price_precision)
                 else:
-                    exit_price = sl_price_short * (1 + fee_rate) * buy_slip
+                    exit_price = round_price(sl_price_short * (1 + fee_rate) * buy_slip, price_precision)
             elif hit_sl:
                 should_exit = True
                 exit_reason = 'Stop Loss'
                 if entry_position > 0:
-                    exit_price = sl_price_long * (1 - fee_rate) * sell_slip
+                    exit_price = round_price(sl_price_long * (1 - fee_rate) * sell_slip, price_precision)
                 else:
-                    exit_price = sl_price_short * (1 + fee_rate) * buy_slip
+                    exit_price = round_price(sl_price_short * (1 + fee_rate) * buy_slip, price_precision)
             elif hit_tp:
                 should_exit = True
                 exit_reason = 'Take Profit'
                 if entry_position > 0:
-                    exit_price = tp_price_long * (1 - fee_rate) * sell_slip
+                    exit_price = round_price(tp_price_long * (1 - fee_rate) * sell_slip, price_precision)
                 else:
-                    exit_price = tp_price_short * (1 + fee_rate) * buy_slip
+                    exit_price = round_price(tp_price_short * (1 + fee_rate) * buy_slip, price_precision)
 
             # --- 檢查其他出場條件 ---
             if not should_exit:
                 if max_hold_bars is not None and holding_period >= max_hold_bars:
                     should_exit = True
                     exit_reason = 'Max Hold Bars'
-                    exit_price = close_ * (1 - fee_rate) * sell_slip if entry_position > 0 else close_ * (1 + fee_rate) * buy_slip
+                    exit_price = round_price(close_ * (1 - fee_rate) * sell_slip, price_precision) if entry_position > 0 else round_price(close_ * (1 + fee_rate) * buy_slip, price_precision)
                 elif target_position != entry_position:
                     should_exit = True
                     exit_reason = 'Signal Change'
-                    exit_price = close_ * (1 - fee_rate) * sell_slip if entry_position > 0 else close_ * (1 + fee_rate) * buy_slip
+                    exit_price = round_price(close_ * (1 - fee_rate) * sell_slip, price_precision) if entry_position > 0 else round_price(close_ * (1 + fee_rate) * buy_slip, price_precision)
 
             # --- 執行出場 ---
             if should_exit:
@@ -219,7 +234,7 @@ def backtest_signals(df: pd.DataFrame,
 
         # ===== 進場判斷 =====
         if entry_position == 0 and target_position != 0:
-            entry_price = close_ * (1 + fee_rate) * buy_slip if target_position > 0 else close_ * (1 - fee_rate) * sell_slip
+            entry_price = round_price(close_ * (1 + fee_rate) * buy_slip, price_precision) if target_position > 0 else round_price(close_ * (1 - fee_rate) * sell_slip, price_precision)
             entry_index = i
             entry_position = target_position
             max_price_during_hold = high_
