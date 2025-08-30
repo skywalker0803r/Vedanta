@@ -1,8 +1,8 @@
-from online.auto_trade_future import auto_trade_futures_dev
+from online.auto_trade_future_dev import auto_trade_futures
 from Technicalindicatorstrategy import TurtleMACDTimeZoneFilter
 
 # 1
-auto_trade_futures_dev(
+auto_trade_futures(
     symbol="ETH/USDT",#幣種
     interval="2h",#週期
     usdt_percent_per_order=0.1,# 每次使用的資金佔比
@@ -15,7 +15,7 @@ auto_trade_futures_dev(
 )
 
 # 2
-auto_trade_futures_dev(
+auto_trade_futures(
     symbol="BTC/USDT",#幣種
     interval="2h",#週期
     usdt_percent_per_order=0.1,# 每次使用的資金佔比
@@ -28,7 +28,7 @@ auto_trade_futures_dev(
 )
 
 # 3
-auto_trade_futures_dev(
+auto_trade_futures(
     symbol="XRP/USDT",#幣種
     interval="2h",#週期
     usdt_percent_per_order=0.1,# 每次使用的資金佔比
@@ -42,7 +42,7 @@ auto_trade_futures_dev(
 
 
 # 4
-auto_trade_futures_dev(
+auto_trade_futures(
     symbol="BNB/USDT",#幣種
     interval="2h",#週期
     usdt_percent_per_order=0.1,# 每次使用的資金佔比
@@ -56,7 +56,7 @@ auto_trade_futures_dev(
 
 
 # 5
-auto_trade_futures_dev(
+auto_trade_futures(
     symbol="ADA/USDT",#幣種
     interval="2h",#週期
     usdt_percent_per_order=0.1,# 每次使用的資金佔比
@@ -69,7 +69,7 @@ auto_trade_futures_dev(
 )
 
 # 6
-auto_trade_futures_dev(
+auto_trade_futures(
     symbol="SOL/USDT",#幣種
     interval="2h",#週期
     usdt_percent_per_order=0.1,# 每次使用的資金佔比
