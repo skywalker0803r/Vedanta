@@ -7,6 +7,7 @@ import pandas as pd
 import sys
 import io
 import requests
+import inspect
 
 load_dotenv()
 
@@ -187,7 +188,7 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h",
         def process_once():
             try:
                 #print(f"\n🔔 【策略執行】時間: {datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S} UTC")
-                print(f"🧠 使用策略: {strategy.__class__.__name__}，交易標的: {symbol}")
+                print(f"🧠 使用策略: {os.path.basename(strategy.__file__)}，交易標的: {symbol}")
 
                 now = datetime.now(timezone.utc)
                 df = strategy.get_signals(symbol.replace("/", ""), interval, now)
