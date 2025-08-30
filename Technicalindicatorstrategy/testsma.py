@@ -19,7 +19,7 @@ def get_binance_kline(symbol: str, interval: str, end_time: datetime, limit: int
         "close_time", "quote_asset_volume", "number_of_trades",
         "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore"
     ])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms", utc=True)
     df[["open", "high", "low", "close"]] = df[["open", "high", "low", "close"]].astype(float)
     return df[["timestamp", "open", "high", "low", "close"]]
 
