@@ -162,7 +162,7 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h",
             if entry_time:
                 entry_time_dt = datetime.fromtimestamp(entry_time / 1000, tz=timezone.utc)
                 aligned_entry_time = align_to_interval(entry_time_dt, interval_sec)
-                filtered_df = df[df['timestamp'] <= aligned_entry_time]
+                filtered_df = df[df['timestamp'] <= pd.Timestamp(aligned_entry_time)]
                 if not filtered_df.empty:
                     entry_index = df.index.get_loc(filtered_df.iloc[-1].name)
                     current_index = len(df) - 1
