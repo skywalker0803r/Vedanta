@@ -167,13 +167,13 @@ class FlexibleStrategyOptimizer:
             print(f"Error in trading_strategy: {e}")
             return -999.0, {}
 
-    def objective(self, trial): 
-        """Optuna 目標函數 - 使用複合指標"""
+    def objective(self, trial):
+        """Optuna 目標函數 - 支援單目標與 NSGA-II 多目標"""
         trial_params = {}
-        
-        for param_name, param_config in self.strategy_config['optimize_params'].items():
+
+        # 根據 config 建議參數
+        for param_name, param_config in self.strategy_config['optimize_params'].items(): 
             param_type = param_config['type']
-            
             if param_type == 'int':
                 value = trial.suggest_int(
                     param_name,
@@ -192,17 +192,31 @@ class FlexibleStrategyOptimizer:
                 value = trial.suggest_categorical(param_name, param_config['choices'])
             else:
                 raise ValueError(f"Unsupported parameter type: {param_type}")
-                
+
             trial_params[param_name] = value
-        
-        # 執行策略
+
+        # 執行策略，得到複合指標 + 各個單獨指標
         composite_value, trial_metrics = self.trading_strategy(trial_params)
-        
-        # 將其他指標存儲為用戶屬性
+
+        # 將指標存成 user_attr
         for metric_name, metric_value in trial_metrics.items():
             trial.set_user_attr(metric_name, metric_value)
-            
-        return composite_value
+
+        # 判斷是否為 NSGA-II
+        optimize_config = self.strategy_config.get('optimize_config', {})
+        sampler_type = optimize_config.get('sampler', 'tpe').lower()
+
+        if sampler_type == 'nsga2':
+            # NSGA-II 回傳多目標 (Sharpe, Sortino, Calmar)
+            return (
+                trial_metrics.get('Sharpe Ratio', 0.0),
+                trial_metrics.get('Sortino Ratio', 0.0),
+                trial_metrics.get('Calmar Ratio', 0.0)
+            )
+        else:
+            # 單目標仍回傳 composite_value
+            return composite_value
+
 
     def run_optimization(self, n_trials=250, n_jobs=-1, study_name=None):
         """運行參數優化"""
@@ -217,44 +231,56 @@ class FlexibleStrategyOptimizer:
 
         if study_name is None:
             study_name = f"{self.strategy_config['strategy_function']}_optimization"
-            
+
         storage = f'sqlite:///{study_name}.db'
-        
+
         import os
         if os.path.exists(study_name + '.db'):
             print(f"檢測到現有資料庫: {study_name}.db")
         else:
             print(f"創建新資料庫: {study_name}.db")
-        
-        # 確定優化方向（複合指標總是最大化）
-        direction = 'maximize'
-        
+
+        # 確定優化方向
+        optimize_config = self.strategy_config.get('optimize_config', {})
+        sampler_type = optimize_config.get('sampler', 'tpe').lower()
+
+        if sampler_type == 'nsga2':
+            direction = ["maximize", "maximize", "maximize"]  # 三個目標
+        else:
+            direction = "maximize"
+
+
+        # 從 config 讀取 optimize_config
+        optimize_config = self.strategy_config.get('optimize_config', {})
+        sampler_type = optimize_config.get('sampler', 'tpe').lower()
+        seed = optimize_config.get('seed', 42)
+
+        # 建立基礎 sampler
+        if sampler_type == 'random':
+            base_sampler = optuna.samplers.RandomSampler(seed=seed)
+        elif sampler_type == 'cmaes':
+            base_sampler = optuna.samplers.CmaEsSampler(seed=seed)
+        elif sampler_type == 'nsga2':
+            base_sampler = optuna.samplers.NSGAIISampler(seed=seed)
+        elif sampler_type == 'qmc':
+            base_sampler = optuna.samplers.QMCSampler(qmc_type="sobol", seed=seed)
+        else:  # 預設 TPE
+            base_sampler = optuna.samplers.TPESampler(seed=seed)
+
+        # 包裝成 UniqueParamsSampler，避免重複
         used_params = set()
+        sampler = UniqueParamsSampler(used_params=used_params, seed=seed)
+
+        # 嘗試載入或建立 study
         try:
             study = optuna.load_study(study_name=study_name, storage=storage)
+            print(f"已載入 study，包含 {len(study.trials)} 個試驗")
             for trial in study.trials:
                 if trial.params:
                     param_tuple = tuple(sorted((k, v) for k, v in trial.params.items()))
                     used_params.add(param_tuple)
-            print(f"已載入 study，包含 {len(study.trials)} 個試驗，已使用 {len(used_params)} 個參數組合")
         except Exception as e:
-            print(f"載入資料庫失敗：{e}")
-            print("創建新資料庫...")
-            study = optuna.create_study(
-                direction=direction,
-                sampler=optuna.samplers.TPESampler(seed=42),
-                pruner=optuna.pruners.MedianPruner(),
-                study_name=study_name,
-                storage=storage
-            )
-        
-        sampler = UniqueParamsSampler(used_params=used_params, seed=42)
-        try:
-            study = optuna.load_study(study_name=study_name, storage=storage)
-            print(f"已載入 study，包含 {len(study.trials)} 個試驗")
-        except Exception as e:
-            print(f"載入資料庫失敗：{e}")
-            print("創建新資料庫...")
+            print(f"載入資料庫失敗：{e}，建立新 study")
             study = optuna.create_study(
                 direction=direction,
                 sampler=sampler,
@@ -262,19 +288,21 @@ class FlexibleStrategyOptimizer:
                 study_name=study_name,
                 storage=storage
             )
-        
+
         if len(study.trials) < 10:
             print(f"警告：當前試驗數量 ({len(study.trials)}) 較少，建議至少運行 50 次試驗以確保分析可靠性")
-        
+
+        # 開始優化
         study.optimize(
             self.objective,
             n_trials=n_trials,
             n_jobs=n_jobs,
             show_progress_bar=True
         )
-        
+
         self.study = study
         self.print_optimization_results()
+
         print("\n計算加權高原分數...")
         self.calculate_plateau_score()
         self.plot_plateau()
@@ -282,6 +310,7 @@ class FlexibleStrategyOptimizer:
         self.plot_optimize_params_vs_pp_score()
 
         return study
+
     
     def print_optimization_results(self):
         """打印優化結果"""
@@ -1041,6 +1070,10 @@ def create_custom_strategy_config(strategy_module, strategy_function, param_conf
     config = {
         'strategy_module': strategy_module,
         'strategy_function': strategy_function,
+        'optimize_config': {
+        'sampler': 'tpe',     # 可選: 'tpe', 'random', 'cmaes', 'nsga2', 'qmc'
+        'seed': 42
+        },
         'fixed_params': param_config.get('fixed_params', {}),
         'optimize_params': param_config.get('optimize_params', {}),
         'target_metrics': param_config.get('target_metrics', ['Sharpe Ratio', 'Sortino Ratio', 'Calmar Ratio']),
@@ -1244,6 +1277,10 @@ def example_custom_strategy():
     print("\n自定義策略配置範例:")
     
     custom_config = {
+         'optimize_config': {
+        'sampler': 'tpe',     # 可選: 'tpe', 'random', 'cmaes', 'nsga2', 'qmc'
+        'seed': 42
+        },
         'fixed_params': {
             'symbol': 'BTCUSDT',
             'interval': '4h',
