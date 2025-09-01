@@ -1,6 +1,6 @@
 import ccxt
 import time
-import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os
 
@@ -50,12 +50,12 @@ def auto_trade(symbol="ETH/USDT", interval="1m", usdt_per_order=50, strategy=Non
             # 判斷是否持有多單（只要大於最小下單量就視為有持倉）
             last_position = 1 if free_coin >= min_amount else 0
 
-            now = datetime.datetime.utcnow()
+            now = datetime.now(timezone.utc)
             df = strategy.get_signals(symbol.replace("/", ""), interval, now)
             latest = df.iloc[-1]
             close = latest["close"]
             signal = latest["signal"]
-            print(f"[{now:%Y-%m-%d %H:%M:%S}] Close: {close:.2f}, Signal: {signal}")
+            print(f"[{datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S}] Close: {close:.2f}, Signal: {signal}")
 
             # 多單信號且目前無多單，則買入
             if signal == 1 and last_position == 0:

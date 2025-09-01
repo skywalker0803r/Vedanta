@@ -1,7 +1,7 @@
 import ccxt
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 import pandas as pd
 load_dotenv()
@@ -116,7 +116,7 @@ def cancel_all_open_orders(client, symbol):
 def align_to_interval(dt, interval_sec):
     ts = int(dt.timestamp())
     aligned_ts = ts - (ts % interval_sec)
-    return datetime.utcfromtimestamp(aligned_ts)
+    return datetime.fromtimestamp(aligned_ts, tz=timezone.utc)
 
 # 主程序
 def auto_trade_futures(symbol="ETH/USDT", interval="1h",
@@ -138,28 +138,20 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h",
 
     def process_once():
         try:
-            print(f"\n🔔 【策略執行】時間: {datetime.utcnow():%Y-%m-%d %H:%M:%S} UTC")
+            print(f"\n🔔 【策略執行】時間: {datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S} UTC")
             print(f"🧠 使用策略: {strategy.__class__.__name__}，交易標的: {symbol}")
 
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             df = strategy.get_signals(symbol.replace("/", ""), interval, now)
             latest = df.iloc[-1]
             close_price = latest['close']
             signal = latest['signal']
             
-            # 如果沒設止損則看策略本身是否帶止損 有的話就用策略止損替換None
-            if stop_loss == None:
-                if pd.notna(latest['stop_loss']):
-                    stop_loss = latest['stop_loss']
-                else:
-                    stop_loss = None
-                    print('沒設止損 策略也沒有止損')
-            
             print(f"📈 最新收盤價: {close_price:.2f}, 訊號: {signal}")
 
             position_amt, position_side, entry_price, entry_time = get_position(client, symbol)
             usdt_balance = get_usdt_balance(client)
-            human_time = datetime.utcfromtimestamp(entry_time / 1000).strftime("%Y-%m-%d %H:%M:%S") if entry_time else "N/A"
+            human_time = datetime.fromtimestamp(entry_time / 1000, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S") if entry_time else "N/A"
             print(f"💼 持倉狀況: {position_amt:.6f} ({position_side})，入場價: {entry_price}，入場時間: {human_time} UTC")
 
             usdt_per_order = usdt_balance * usdt_percent_per_order
@@ -168,9 +160,9 @@ def auto_trade_futures(symbol="ETH/USDT", interval="1h",
             order_amt = round_step_size(order_amt, step_size)
 
             if entry_time:
-                entry_time_dt = datetime.utcfromtimestamp(entry_time / 1000)
+                entry_time_dt = datetime.fromtimestamp(entry_time / 1000, tz=timezone.utc)
                 aligned_entry_time = align_to_interval(entry_time_dt, interval_sec)
-                filtered_df = df[df['timestamp'] <= aligned_entry_time]
+                filtered_df = df[df['timestamp'] <= pd.Timestamp(aligned_entry_time)]
                 if not filtered_df.empty:
                     entry_index = df.index.get_loc(filtered_df.iloc[-1].name)
                     current_index = len(df) - 1

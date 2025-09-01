@@ -1,6 +1,6 @@
 import requests
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 def get_binance_kline(symbol: str, interval: str, end_time: datetime, limit: int = 300) -> pd.DataFrame:
     base_url = "https://api.binance.com/api/v3/klines"
@@ -116,5 +116,5 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 300
 if __name__ == '__main__':
     from datetime import datetime
     # 抓 BTCUSDT 的 1小時線，以現在時間為終點
-    df_signals = get_signals("BTCUSDT", "15m", datetime.now(),1000)
+    df_signals = get_signals("BTCUSDT", "15m", datetime.now(timezone.utc),1000)
     print(df_signals['signal'].value_counts())

@@ -43,7 +43,7 @@ def get_top_symbols(limit=100, quote_asset='USDT'):
 def main():
     long_symbols = []
     short_symbols = []
-    top_symbols = get_top_symbols()
+    top_symbols = ['BTCUSDT','ETHUSDT','SOLUSDT','XRPUSDT','BNBUSDT','ADAUSDT']#get_top_symbols()
 
     # 循環處理每個幣種、分析、通知。
     for symbol in top_symbols:
