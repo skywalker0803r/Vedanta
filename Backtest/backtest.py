@@ -402,6 +402,9 @@ def backtest_signals(df: pd.DataFrame,
         else:
             sortino_ratio = float('inf') if annualized_return > risk_free_rate else float('-inf') if annualized_return < risk_free_rate else 0.0
 
+    # Calmar Ratio
+    calmar_ratio = annualized_return/(-1*float(max_dd)) if max_dd < 0 else float('inf')
+
     # Expectancy 等其他指標
     if trade_returns:
         avg_win = np.mean(wins) if wins else 0
@@ -452,6 +455,7 @@ def backtest_signals(df: pd.DataFrame,
         'Risk/performance ratios': {
             'Sharpe Ratio': f'{sharpe_ratio:.2f}',
             'Sortino Ratio': f'{sortino_ratio:.2f}',
+            'Calmar Ratio' : f'{calmar_ratio:.2f}',
             'Profit Factor': f'{profit_factor:.2f}',
         },
         'fig': {
@@ -469,5 +473,6 @@ def backtest_signals(df: pd.DataFrame,
             'Max Drawdown': float(max_dd) if max_dd is not None else 0.0000,
             'Sharpe Ratio': float(sharpe_ratio) if sharpe_ratio is not None else 0.00,
             'Sortino Ratio': float(sortino_ratio) if sortino_ratio is not None else 0.00,
+            'Calmar Ratio' : float(calmar_ratio) if calmar_ratio is not None else 0.00,
         }
     }
