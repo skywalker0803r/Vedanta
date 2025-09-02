@@ -145,7 +145,7 @@ def fetch_klines_safe(client, symbol, interval, limit=100):
         return None
 
 # 主程序
-def auto_trade_safe(symbol="ETH/USDT", interval="1h",
+def auto_trade_futures(symbol="ETH/USDT", interval="1h",
                      usdt_percent_per_order=0.1, leverage=5,
                      strategy=None, run_once=True,
                      stop_loss=None, take_profit=None,
