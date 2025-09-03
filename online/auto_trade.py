@@ -1,5 +1,6 @@
 import ccxt
 import time
+import requests
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os
@@ -24,13 +25,37 @@ def create_binance_client():
     print(f"✅ 已啟用 {'Testnet' if testnet_mode else '主網'} 模式")
     return client
 
+def get_binance_latest_price(symbol: str) :
+    """
+    從幣安 API 獲取 成交價格。
+    """
+    base_url = "https://api.binance.com/api/v3/trades"
+
+    params = {
+        "symbol": symbol.upper(),
+        "limit": 1
+    }
+    try:
+        response = requests.get(base_url, params=params, timeout=100)
+        response.raise_for_status()
+    except Exception as e:
+        print(f"Error fetching data: {e}")
+
+    data = response.json()
+
+
+    if not data:
+        print("No more data returned from API.")
+    return data[0]['price']
+
+
 # ✅ 取得該交易對最小下單數量
 def get_min_trade_amount(client, symbol):
     markets = client.load_markets()
     return markets[symbol]["limits"]["amount"]["min"]
 
 # ✅ 自動交易主程序
-def auto_trade(symbol="ETH/USDT", interval="1m", usdt_per_order=50, strategy=None, run_once=True):
+def auto_trade(symbol="ETHUSDT", interval="1m", usdt_per_order=50, strategy=None, run_once=True):
     client = create_binance_client()
     min_amount = get_min_trade_amount(client, symbol)
     print(f"✅ {symbol} 最小下單量為 {min_amount}")
@@ -62,7 +87,10 @@ def auto_trade(symbol="ETH/USDT", interval="1m", usdt_per_order=50, strategy=Non
                 amount = usdt_per_order / close
                 if amount >= min_amount:
                     print(f"🟢 黃金交叉 → 市價買入 {amount:.6f} {symbol}")
-                    client.create_market_buy_order(symbol, amount)
+                    # client.create_market_buy_order(symbol, amount)
+                    # 使用實盤成交價格，在並用限價單送出
+                    now_price = get_binance_latest_price(symbol)
+                    client.createOrder(symbol, type = 'limit',amount = amount,side='buy',price = now_price)
                 else:
                     print(f"⚠️ 買入失敗，數量 {amount:.6f} 小於最小下單量 {min_amount}")
 
@@ -71,7 +99,10 @@ def auto_trade(symbol="ETH/USDT", interval="1m", usdt_per_order=50, strategy=Non
                 amount = free_coin
                 if amount >= min_amount:
                     print(f"🔴 死亡交叉 → 市價賣出 {amount:.6f} {coin}")
-                    client.create_market_sell_order(symbol, amount)
+                    # client.create_market_sell_order(symbol, amount)
+                    # 使用實盤成交價格，在並用限價單送出
+                    now_price = get_binance_latest_price(symbol)
+                    client.createOrder(symbol, type = 'limit',amount = amount,side='sell',price = now_price)
                 else:
                     print(f"⚠️ 賣出失敗，數量 {amount:.6f} 小於最小下單量 {min_amount}")
 
