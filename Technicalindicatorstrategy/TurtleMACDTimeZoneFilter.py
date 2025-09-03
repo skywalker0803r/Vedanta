@@ -113,6 +113,8 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
             continue
 
         current_close = df.loc[i, 'close']
+        current_low = df.loc[i,'close']
+        current_high = df.loc[i,'high']
         atr = df.loc[i, 'ATR']
         high_20 = df.loc[i, f'{high_low_lookback}_high']
         low_20 = df.loc[i, f'{high_low_lookback}_low']
@@ -155,13 +157,13 @@ def get_signals(symbol: str, interval: str, end_time: datetime, limit: int = 100
         # --- 判斷進場 ---
         # 新增時間過濾條件: 只有在台北時間 22:00 ~ 24:00 (hour >= 22) 才執行進場邏輯
         if current_position == 0 and current_signal == 0 and current_time_taipei.hour >= 22 and current_time_taipei.hour <= 24:
-            if current_close > high_20:  # 突破 20 日高
+            if current_high > high_20:  # 突破 20 日高
                 current_position = 1
                 entry_price = current_close
                 stop_loss = entry_price - atr_multiplier_sl * atr
                 current_signal = 1  # 訊號改為 1，代表開多
                 current_reason = "多單進場"
-            elif current_close < low_20:  # 跌破 20 日低
+            elif current_low < low_20:  # 跌破 20 日低
                 current_position = -1
                 entry_price = current_close
                 stop_loss = entry_price + atr_multiplier_sl * atr
