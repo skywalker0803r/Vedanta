@@ -1,55 +1,31 @@
 """
-Reproduce the Pine Script "ADA 4H Long+Short MIX V1" strategy in Python.
-This version is updated to be logically consistent with the provided Pine Script,
-including all entry, exit, and risk management rules.
+Strategy backtester for "ADA 4H Long+Short MIX V1" with Optuna optimization.
+This script finds the best parameter set by maximizing the Calmar Ratio.
 """
 
 import ccxt
 import time
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import optuna
 from datetime import datetime, timezone
 
-# ------------------------- USER PARAMETERS (match Pine inputs) -------------------------
+# Suppress Optuna's trial info logging
+optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+# ------------------------- STATIC PARAMETERS -------------------------
 EXCHANGE = 'binance'
 SYMBOL = 'ADA/USDT'
 TIMEFRAME = '4h'
-SINCE = '2021-01-01'   # inclusive start date
+SINCE = '2021-01-01'
 INITIAL_CAPITAL = 100.0
-COMMISSION_PCT = 0.2    # percent per trade (entry or exit)
-
-# Position sizing
-longPosPct = 50.0
-shortPosPct = 100.0
-
-# Long params
-donchianLength = 12
-longTermSmaLen = 150
-rsiLenLong = 30
-rsiThLong = 60.0
-
-# Short params
-emaFastLength = 6
-smaSlowLength = 65
-rsiLenShort = 65
-rsiShortThresh = 50
-
-shortTPPct = 10.0
-shortSLPct = 5.0
-trailTriggerPct = 8.0
-trailOffsetPct = 4.0
-
-# Short cooldown
-maxConsecLosses = 1
-cooldownBars = 12
+COMMISSION_PCT = 0.2
 
 # ------------------------- UTILS / INDICATORS -------------------------
 
 def to_ms(dt_str):
     dt = datetime.fromisoformat(dt_str)
     return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
-
 
 def fetch_ohlcv_ccxt(exchange_id, symbol, timeframe, since_ms):
     ex = getattr(ccxt, exchange_id)({'enableRateLimit': True})
@@ -70,14 +46,11 @@ def fetch_ohlcv_ccxt(exchange_id, symbol, timeframe, since_ms):
     df.set_index('datetime', inplace=True)
     return df
 
-
 def sma(series, n):
     return series.rolling(n, min_periods=1).mean()
 
-
 def ema(series, n):
     return series.ewm(span=n, adjust=False).mean()
-
 
 def rsi(series, n):
     delta = series.diff()
@@ -88,227 +61,160 @@ def rsi(series, n):
     rs = ma_up / ma_down
     return 100 - (100 / (1 + rs))
 
-def print_performance_metrics(equity_curve, trades_df, initial_capital):
-    print("\n" + "="*30 + " PERFORMANCE METRICS " + "="*30)
-
-    # 1. Final Equity and PnL
-    final_equity = equity_curve[-1] if equity_curve else initial_capital
-    total_pnl_pct = (final_equity / initial_capital - 1.0) * 100.0
-    print(f"Initial Capital: {initial_capital:.2f}")
-    print(f"Final Equity:    {final_equity:.2f}")
-    print(f"Total PNL:       {total_pnl_pct:.2f}%")
-
-    # 2. Max Drawdown
-    if equity_curve:
-        equity_series = pd.Series(equity_curve, index=df.index[:len(equity_curve)])
-        peak = equity_series.expanding(min_periods=1).max()
-        drawdown = (equity_series - peak) / peak
-        max_drawdown_pct = abs(drawdown.min()) * 100.0
-        print(f"Max Drawdown:    {max_drawdown_pct:.2f}%")
-    else:
-        print("Max Drawdown:    0.00%")
-
-
-    # 3. Trade Stats
-    closed_trades_df = trades_df[trades_df['pnl'].notna()].copy()
-    total_trades = len(closed_trades_df)
-    
-    if total_trades > 0:
-        winning_trades = len(closed_trades_df[closed_trades_df['pnl'] > 0])
-        win_rate_pct = (winning_trades / total_trades) * 100.0
-        
-        gross_profit = closed_trades_df[closed_trades_df['pnl'] > 0]['pnl'].sum()
-        gross_loss = abs(closed_trades_df[closed_trades_df['pnl'] < 0]['pnl'].sum())
-        
-        profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
-
-        print(f"Total Trades:    {total_trades}")
-        print(f"Win Rate:        {win_rate_pct:.2f}%")
-        print(f"Profit Factor:   {profit_factor:.3f}")
-    else:
-        print("Total Trades:    0")
-    
-    print("="*82 + "\n")
-
-# ------------------------- FETCH DATA -------------------------
-
+# ------------------------- DATA LOADING (run once) -------------------------
+print('Fetching OHLCV data...')
 since_ms = to_ms(SINCE)
-print('Fetching OHLCV from Binance since', SINCE)
-df = fetch_ohlcv_ccxt(EXCHANGE, SYMBOL, TIMEFRAME, since_ms)
-print('Loaded', len(df), 'bars. From', df.index[0], 'to', df.index[-1])
+ohlcv_df = fetch_ohlcv_ccxt(EXCHANGE, SYMBOL, TIMEFRAME, since_ms)
+print(f'Loaded {len(ohlcv_df)} bars from {ohlcv_df.index[0]} to {ohlcv_df.index[-1]}')
 
-# ------------------------- INDICATORS -------------------------
-df['longTermSma'] = sma(df['close'], longTermSmaLen)
-df['rsiLong'] = rsi(df['close'], rsiLenLong)
-df['upperBand'] = df['high'].rolling(donchianLength).max().shift(1)
-df['lowerBand'] = df['low'].rolling(donchianLength).min().shift(1)
 
-df['emaFast'] = ema(df['close'], emaFastLength)
-df['smaSlow'] = sma(df['close'], smaSlowLength)
-df['rsiShort'] = rsi(df['close'], rsiLenShort)
+# ------------------------- OPTIMIZATION OBJECTIVE FUNCTION -------------------------
+def objective(trial):
+    # --- Define parameter search space ---
+    # Long params
+    donchianLength = trial.suggest_int('donchianLength', 10, 30)
+    longTermSmaLen = trial.suggest_int('longTermSmaLen', 100, 200)
+    rsiLenLong = trial.suggest_int('rsiLenLong', 10, 40)
+    rsiThLong = trial.suggest_float('rsiThLong', 55.0, 75.0)
+    # Short params
+    emaFastLength = trial.suggest_int('emaFastLength', 5, 15)
+    smaSlowLength = trial.suggest_int('smaSlowLength', 50, 80)
+    rsiLenShort = trial.suggest_int('rsiLenShort', 50, 80)
+    rsiShortThresh = trial.suggest_int('rsiShortThresh', 40, 60)
+    shortTPPct = trial.suggest_float('shortTPPct', 5.0, 15.0)
+    shortSLPct = trial.suggest_float('shortSLPct', 3.0, 10.0)
+    
+    # --- Backtest with suggested parameters ---
+    df = ohlcv_df.copy()
+    
+    # Indicators
+    df['longTermSma'] = sma(df['close'], longTermSmaLen)
+    df['rsiLong'] = rsi(df['close'], rsiLenLong)
+    df['upperBand'] = df['high'].rolling(donchianLength).max().shift(1)
+    df['lowerBand'] = df['low'].rolling(donchianLength).min().shift(1)
+    df['emaFast'] = ema(df['close'], emaFastLength)
+    df['smaSlow'] = sma(df['close'], smaSlowLength)
+    df['rsiShort'] = rsi(df['close'], rsiLenShort)
 
-min_required = max(longTermSmaLen, donchianLength, smaSlowLength, rsiLenLong, rsiLenShort)
-df = df.iloc[min_required:]
+    min_required = max(longTermSmaLen, donchianLength, smaSlowLength, rsiLenLong, rsiLenShort)
+    df = df.iloc[min_required:]
+    if len(df) == 0: return 0 # Not enough data for these params
 
-# ------------------------- BACKTEST -------------------------
+    # Backtest loop variables
+    cash = INITIAL_CAPITAL
+    position = 0
+    pos_qty = 0.0
+    pos_entry_price = 0.0
+    entry_comm = 0.0
+    commission_pct = COMMISSION_PCT / 100.0
+    shortLossCount = 0
+    shortCooldownUntilBarIdx = -1
+    equity_curve = []
+    
+    # Static params (could be optimized too, but fixed for now)
+    longPosPct = 50.0
+    shortPosPct = 100.0
+    maxConsecLosses = 1
+    cooldownBars = 12
+    trailTriggerPct = 8.0
+    trailOffsetPct = 4.0
 
-capital = INITIAL_CAPITAL
-cash = capital
-position = 0  # 0: flat, 1: long, -1: short
-pos_qty = 0.0
-pos_entry_price = 0.0
-entry_comm = 0.0
-commission_pct = COMMISSION_PCT / 100.0
-trade_log = []
-shortLossCount = 0
-shortCooldownUntilBarIdx = -1
-equity_curve = []
-
-for i, row in enumerate(df.itertuples()):
-    timestamp = row.Index
-    close = row.close
-    high = row.high
-    low = row.low
-    inShortCooldown = i < shortCooldownUntilBarIdx
-
-    # Calculate equity at the start of the bar, consistent with Pine's strategy.equity
-    equity = cash
-    if position == 1:
-        equity = cash + pos_qty * close
-    elif position == -1:
-        # For short, equity is cash + unrealized PnL
-        equity = cash + pos_qty * (pos_entry_price - close)
-
-    # -------------------- EXIT LOGIC --------------------
-    # --- LONG EXIT ---
-    if position == 1 and low <= row.lowerBand:
-        exit_price = row.lowerBand  # Exit at the stop price
-        pnl = pos_qty * (exit_price - pos_entry_price)
-        exit_comm = pos_qty * exit_price * commission_pct
-        cash += pos_qty * exit_price - exit_comm # Add back asset value and subtract exit commission
+    for i, row in enumerate(df.itertuples()):
+        close, high, low = row.close, row.high, row.low
+        inShortCooldown = i < shortCooldownUntilBarIdx
         
-        trade_log.append({'type':'CloseLong', 'exit_price': exit_price, 'pnl': pnl - entry_comm - exit_comm, 'timestamp': timestamp})
-        position = 0
-        pos_qty = 0.0
+        equity = cash
+        if position == 1: equity = cash + pos_qty * close
+        elif position == -1: equity = cash + pos_qty * (pos_entry_price - close)
 
-    # --- SHORT EXIT ---
-    elif position == -1:
-        exit_price = 0
-        exit_type = ''
-
-        # 1. Reversal signal exit
-        prev = df.iloc[i-1]
-        if prev['emaFast'] <= prev['smaSlow'] and row.emaFast > row.smaSlow:
-            exit_price = close
-            exit_type = 'Reversal'
-        
-        # 2. TP/SL/Trail Exit (only if not already exited by reversal)
-        if exit_price == 0:
-            shortTP = pos_entry_price * (1 - shortTPPct / 100.0)
-            shortSL = pos_entry_price * (1 + shortSLPct / 100.0)
-            triggerPrice = pos_entry_price * (1 - trailTriggerPct / 100.0)
-
-            # Determine stop price for this bar (conditional stop, not a true sticky trail)
-            stop_price_for_bar = shortSL
-            if low <= triggerPrice:
-                stop_price_for_bar = close * (1 + trailOffsetPct / 100.0)
-
-            if high >= stop_price_for_bar:
-                exit_price = stop_price_for_bar
-                exit_type = 'Stop'
-            elif low <= shortTP:
-                exit_price = shortTP
-                exit_type = 'TP'
-
-        if exit_price > 0:
-            pnl = pos_qty * (pos_entry_price - exit_price)
+        # --- Exit Logic ---
+        if position == 1 and low <= row.lowerBand:
+            exit_price = row.lowerBand
+            pnl = pos_qty * (exit_price - pos_entry_price)
             exit_comm = pos_qty * exit_price * commission_pct
-            cash += pnl - exit_comm # For shorts, cash was not tied up, so just add PnL and subtract exit comm
-
-            # Update cooldown counter
-            if pnl < 0:
-                shortLossCount += 1
-                if shortLossCount >= maxConsecLosses:
-                    shortCooldownUntilBarIdx = i + cooldownBars
+            cash += pos_qty * exit_price - exit_comm
+            position, pos_qty = 0, 0.0
+        elif position == -1:
+            exit_price, exit_type = 0, ''
+            prev = df.iloc[i-1]
+            if prev['emaFast'] <= prev['smaSlow'] and row.emaFast > row.smaSlow:
+                exit_price, exit_type = close, 'Reversal'
             else:
-                shortLossCount = 0  # Reset on profit
+                shortTP = pos_entry_price * (1 - shortTPPct / 100.0)
+                shortSL = pos_entry_price * (1 + shortSLPct / 100.0)
+                stop_price_for_bar = shortSL
+                if low <= pos_entry_price * (1 - trailTriggerPct / 100.0):
+                    stop_price_for_bar = close * (1 + trailOffsetPct / 100.0)
+                if high >= stop_price_for_bar: exit_price, exit_type = stop_price_for_bar, 'Stop'
+                elif low <= shortTP: exit_price, exit_type = shortTP, 'TP'
+            
+            if exit_price > 0:
+                pnl = pos_qty * (pos_entry_price - exit_price)
+                exit_comm = pos_qty * exit_price * commission_pct
+                cash += pnl - exit_comm
+                if pnl < 0:
+                    shortLossCount += 1
+                    if shortLossCount >= maxConsecLosses: shortCooldownUntilBarIdx = i + cooldownBars
+                else: shortLossCount = 0
+                position, pos_qty = 0, 0.0
 
-            trade_log.append({'type':f'CloseShort ({exit_type})', 'exit_price': exit_price, 'pnl': pnl - entry_comm - exit_comm, 'timestamp': timestamp})
-            position = 0
-            pos_qty = 0.0
-
-    # -------------------- ENTRY LOGIC --------------------
-    if position == 0:
-        # Long signal
-        isMacroUptrend = close > row.longTermSma
-        prev = df.iloc[i-1]
-        isBreakout = (prev['close'] <= prev['upperBand']) and (close > row.upperBand)
-        isRsiOKLong = row.rsiLong > rsiThLong
-        longSignal = isMacroUptrend and isBreakout and isRsiOKLong
-
-        if longSignal:
-            qty = (equity * longPosPct / 100.0) / close
-            entry_comm = qty * close * commission_pct
-            cash -= qty * close + entry_comm # Cash is reduced by purchase cost and commission
-            pos_qty = qty
-            pos_entry_price = close
-            position = 1
-            trade_log.append({'type':'OpenLong','entry_price':pos_entry_price,'qty':pos_qty,'entry_index':i, 'timestamp': timestamp})
-
-        # Short signal
-        shortSignal = (prev['emaFast'] > prev['smaSlow']) and (row.emaFast <= row.smaSlow) and (row.rsiShort < rsiShortThresh)
+        # --- Entry Logic ---
+        if position == 0:
+            prev = df.iloc[i-1]
+            if (close > row.longTermSma) and (prev['close'] <= prev['upperBand']) and (close > row.upperBand) and (row.rsiLong > rsiThLong):
+                qty = (equity * longPosPct / 100.0) / close
+                entry_comm = qty * close * commission_pct
+                cash -= qty * close + entry_comm
+                pos_qty, pos_entry_price, position = qty, close, 1
+            elif not inShortCooldown and (prev['emaFast'] > prev['smaSlow']) and (row.emaFast <= row.smaSlow) and (row.rsiShort < rsiShortThresh):
+                qty = (equity * shortPosPct / 100.0) / close
+                entry_comm = qty * close * commission_pct
+                cash -= entry_comm
+                pos_qty, pos_entry_price, position = qty, close, -1
         
-        if shortSignal and not inShortCooldown:
-            qty = (equity * shortPosPct / 100.0) / close
-            entry_comm = qty * close * commission_pct
-            cash -= entry_comm  # For shorts, cash is only reduced by commission
-            pos_qty = qty
-            pos_entry_price = close
-            position = -1
-            trade_log.append({'type':'OpenShort','entry_price':pos_entry_price,'qty':pos_qty,'entry_index':i, 'timestamp': timestamp})
+        final_equity_on_bar = cash
+        if position == 1: final_equity_on_bar = cash + pos_qty * close
+        elif position == -1: final_equity_on_bar = cash + pos_qty * (pos_entry_price - close)
+        equity_curve.append(final_equity_on_bar)
 
-    # Record equity for this bar
-    # Recalculate final equity for the record
-    final_equity_on_bar = cash
-    if position == 1:
-        final_equity_on_bar = cash + pos_qty * close
-    elif position == -1:
-        final_equity_on_bar = cash + pos_qty * (pos_entry_price - close)
-    equity_curve.append(final_equity_on_bar)
+    # --- Post-backtest calculation ---
+    if not equity_curve: return 0.0
+    
+    final_equity = equity_curve[-1]
+    
+    # Calculate Max Drawdown
+    equity_series = pd.Series(equity_curve)
+    peak = equity_series.expanding(min_periods=1).max()
+    drawdown = (equity_series - peak) / peak
+    max_drawdown = abs(drawdown.min())
+    
+    if max_drawdown == 0: return 0.0 # Avoid division by zero
 
+    # Calculate Compound Annual Return
+    total_days = (df.index[-1] - df.index[0]).days
+    if total_days < 30: return 0.0 # Not enough data for annualization
+    years = total_days / 365.25
+    cagr = (final_equity / INITIAL_CAPITAL)**(1 / years) - 1
 
-# ------------------------- POST-BACKTEST -------------------------
-# Close any open positions at the last price
-if position == 1:
-    exit_price = df['close'].iloc[-1]
-    pnl = pos_qty * (exit_price - pos_entry_price)
-    exit_comm = pos_qty * exit_price * commission_pct
-    cash += pos_qty * exit_price - exit_comm
-    trade_log.append({'type':'CloseLong (EOD)', 'exit_price': exit_price, 'pnl': pnl - entry_comm - exit_comm, 'timestamp': df.index[-1]})
-    position = 0
-elif position == -1:
-    exit_price = df['close'].iloc[-1]
-    pnl = pos_qty * (pos_entry_price - exit_price)
-    exit_comm = pos_qty * exit_price * commission_pct
-    cash += pnl - exit_comm
-    trade_log.append({'type':'CloseShort (EOD)', 'exit_price': exit_price, 'pnl': pnl - entry_comm - exit_comm, 'timestamp': df.index[-1]})
-    position = 0
+    # Calculate Calmar Ratio
+    calmar_ratio = cagr / max_drawdown
+    return calmar_ratio
 
-if equity_curve:
-    equity_curve[-1] = cash # Final equity is the final cash after closing all positions
+# ------------------------- MAIN EXECUTION -------------------------
+if __name__ == "__main__":
+    n_trials = 100
+    print(f"\nStarting Optuna optimization for {n_trials} trials...")
+    
+    study = optuna.create_study(direction='maximize')
+    study.optimize(objective, n_trials=n_trials, show_progress_bar=True)
 
-# ------------------------- RESULTS -------------------------
-trades_df = pd.DataFrame(trade_log)
-
-print_performance_metrics(equity_curve, trades_df, INITIAL_CAPITAL)
-
-plt.figure(figsize=(10,5))
-plt.plot(df.index[:len(equity_curve)], equity_curve)
-plt.title('Equity Curve')
-plt.ylabel('Equity')
-plt.xlabel('Date')
-plt.grid(True)
-plt.show()
-
-trades_df.to_csv('ada_strategy_trades_fixed.csv', index=False)
-print('Saved trades to ada_strategy_trades_fixed.csv')
+    print("\n" + "="*30 + " OPTIMIZATION FINISHED " + "="*30)
+    print(f"Number of finished trials: {len(study.trials)}")
+    print("Best trial:")
+    
+    best = study.best_trial
+    print(f"  Value (Calmar Ratio): {best.value:.4f}")
+    print("  Params: ")
+    for key, value in best.params.items():
+        print(f"    {key}: {value}")
+    print("="*82 + "\n")
