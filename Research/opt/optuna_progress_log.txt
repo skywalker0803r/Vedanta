@@ -1,0 +1,115 @@
+Optuna optimization log started at 2025-09-04 23:43:08
+Objective: Maximize Sortino Ratio
+Number of Trials: 100
+---Timestamp: 2025-09-04 23:43:09
+Trial Number: 0
+Value (Sortino Ratio): 0.5944
+Params: 
+  donchianLength: 18
+  longTermSmaLen: 194
+  rsiLenLong: 39
+  rsiThLong: 55.566794655183514
+  emaFastLength: 6
+  smaSlowLength: 51
+  rsiLenShort: 64
+  rsiShortThresh: 54
+  shortTPPct: 9.687157185694618
+  shortSLPct: 4.282122816706231
+---Timestamp: 2025-09-04 23:43:10
+Trial Number: 1
+Value (Sortino Ratio): 0.6466
+Params: 
+  donchianLength: 17
+  longTermSmaLen: 164
+  rsiLenLong: 21
+  rsiThLong: 61.596058729546186
+  emaFastLength: 6
+  smaSlowLength: 58
+  rsiLenShort: 61
+  rsiShortThresh: 45
+  shortTPPct: 14.338480669947446
+  shortSLPct: 4.529939337682004
+---Timestamp: 2025-09-04 23:43:14
+Trial Number: 6
+Value (Sortino Ratio): 1.0864
+Params: 
+  donchianLength: 13
+  longTermSmaLen: 138
+  rsiLenLong: 37
+  rsiThLong: 70.06081249064563
+  emaFastLength: 13
+  smaSlowLength: 77
+  rsiLenShort: 67
+  rsiShortThresh: 51
+  shortTPPct: 6.070718209248984
+  shortSLPct: 5.691949656923868
+---Timestamp: 2025-09-04 23:43:20
+Trial Number: 13
+Value (Sortino Ratio): 1.3050
+Params: 
+  donchianLength: 14
+  longTermSmaLen: 135
+  rsiLenLong: 31
+  rsiThLong: 69.21867323978971
+  emaFastLength: 15
+  smaSlowLength: 74
+  rsiLenShort: 70
+  rsiShortThresh: 52
+  shortTPPct: 6.997313972756366
+  shortSLPct: 6.78611251762426
+---Timestamp: 2025-09-04 23:43:21
+Trial Number: 14
+Value (Sortino Ratio): 1.4064
+Params: 
+  donchianLength: 14
+  longTermSmaLen: 142
+  rsiLenLong: 28
+  rsiThLong: 65.7735798043032
+  emaFastLength: 15
+  smaSlowLength: 73
+  rsiLenShort: 69
+  rsiShortThresh: 50
+  shortTPPct: 7.505100681761394
+  shortSLPct: 5.604536693402521
+---Timestamp: 2025-09-04 23:43:24
+Trial Number: 18
+Value (Sortino Ratio): 1.4847
+Params: 
+  donchianLength: 19
+  longTermSmaLen: 154
+  rsiLenLong: 25
+  rsiThLong: 62.27177306583881
+  emaFastLength: 15
+  smaSlowLength: 68
+  rsiLenShort: 72
+  rsiShortThresh: 50
+  shortTPPct: 6.7392813439348735
+  shortSLPct: 5.641408982512759
+---Timestamp: 2025-09-04 23:43:26
+Trial Number: 21
+Value (Sortino Ratio): 1.6362
+Params: 
+  donchianLength: 12
+  longTermSmaLen: 158
+  rsiLenLong: 27
+  rsiThLong: 63.27484419666968
+  emaFastLength: 15
+  smaSlowLength: 74
+  rsiLenShort: 69
+  rsiShortThresh: 52
+  shortTPPct: 6.80561772699314
+  shortSLPct: 6.716465110035915
+---Timestamp: 2025-09-04 23:44:29
+Trial Number: 95
+Value (Sortino Ratio): 1.7753
+Params: 
+  donchianLength: 12
+  longTermSmaLen: 152
+  rsiLenLong: 22
+  rsiThLong: 65.51146591424036
+  emaFastLength: 15
+  smaSlowLength: 75
+  rsiLenShort: 75
+  rsiShortThresh: 51
+  shortTPPct: 5.979261870564629
+  shortSLPct: 5.581803178164256

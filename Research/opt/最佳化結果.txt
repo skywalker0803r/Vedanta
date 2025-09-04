@@ -1,22 +1,14 @@
-Starting Optuna optimization for 3000 trials...
-Best trial: 2781. Best value: 3.33418: 100%|███████████████████████████████████████| 3000/3000 [51:43<00:00,  1.03s/it]
-
-============================== OPTIMIZATION FINISHED ==============================
-Number of finished trials: 3000
-Best trial:
-  Value (Calmar Ratio): 3.3342
-  Params:
-    donchianLength: 24
-    longTermSmaLen: 176
-    rsiLenLong: 31
-    rsiThLong: 69.80002232260584
-    emaFastLength: 11
-    smaSlowLength: 77
-    rsiLenShort: 62
-    rsiShortThresh: 46
-    shortTPPct: 10.666960786649067
-    shortSLPct: 4.629920984777441
-==================================================================================
-
-
-(Vedanta) C:\Users\ricky\Desktop\Vedanta\Research\opt>
+---Timestamp: 2025-09-04 23:44:29
+Trial Number: 95
+Value (Sortino Ratio): 1.7753
+Params: 
+  donchianLength: 12
+  longTermSmaLen: 152
+  rsiLenLong: 22
+  rsiThLong: 65.51146591424036
+  emaFastLength: 15
+  smaSlowLength: 75
+  rsiLenShort: 75
+  rsiShortThresh: 51
+  shortTPPct: 5.979261870564629
+  shortSLPct: 5.581803178164256
