@@ -187,7 +187,7 @@ def objective(trial):
 
 # ------------------------- MAIN EXECUTION -------------------------
 if __name__ == "__main__":
-    n_trials = 100 # You can change this value
+    n_trials = 1000 # You can change this value
     
     # Clear log file at the start of a new study
     with open(LOG_FILE, 'w') as f:

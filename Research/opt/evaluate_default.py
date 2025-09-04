@@ -1,3 +1,8 @@
+"""
+This script runs a single backtest using the default parameters from the original pine.txt strategy.
+Its purpose is to evaluate the performance of the baseline strategy before optimization.
+"""
+
 import ccxt
 import time
 import pandas as pd
@@ -113,9 +118,7 @@ for i, row in enumerate(df.itertuples()):
     if position == 1: equity = cash + pos_qty * close
     elif position == -1: equity = cash + pos_qty * (pos_entry_price - close)
 
-    # ---
-    # Exit Logic
-    # ---
+    # --- Exit Logic ---
     if position == 1 and low <= row.lowerBand:
         exit_price = row.lowerBand
         pnl = pos_qty * (exit_price - pos_entry_price)
@@ -148,9 +151,7 @@ for i, row in enumerate(df.itertuples()):
             else: shortLossCount = 0
             position, pos_qty = 0, 0.0
 
-    # ---
-    # Entry Logic
-    # ---
+    # --- Entry Logic ---
     if position == 0:
         prev = df.iloc[i-1]
         if (close > row.longTermSma) and (prev['close'] <= prev['upperBand']) and (close > row.upperBand) and (row.rsiLong > rsiThLong):
@@ -178,8 +179,8 @@ print(f"Initial Capital: {INITIAL_CAPITAL:.2f}")
 print(f"Final Equity:    {final_equity:.2f}")
 print(f"Total PNL:       {total_pnl_pct:.2f}%")
 
-if equity_curve:
-    equity_series = pd.Series(equity_curve)
+if equity_curve and len(df) > 0:
+    equity_series = pd.Series(equity_curve, index=df.index[:len(equity_curve)])
     peak = equity_series.expanding(min_periods=1).max()
     drawdown = (equity_series - peak) / peak
     max_drawdown = abs(drawdown.min())
@@ -187,14 +188,37 @@ if equity_curve:
     print(f"Max Drawdown:    {max_drawdown_pct:.2f}%")
 
     total_days = (df.index[-1] - df.index[0]).days
-    if total_days > 30 and max_drawdown > 0:
+    if total_days > 30:
         years = total_days / 365.25
         cagr = (final_equity / INITIAL_CAPITAL)**(1 / years) - 1
-        calmar_ratio = cagr / max_drawdown
-        print(f"Calmar Ratio:    {calmar_ratio:.3f}")
+
+        # Calculate Calmar Ratio
+        if max_drawdown > 0:
+            calmar_ratio = cagr / max_drawdown
+            print(f"Calmar Ratio:    {calmar_ratio:.3f}")
+        else:
+            print("Calmar Ratio:    inf")
+
+        # Calculate Sortino Ratio
+        daily_equity = equity_series.resample('D').last()
+        daily_returns = daily_equity.pct_change().dropna()
+        negative_returns = daily_returns[daily_returns < 0]
+        if len(negative_returns) > 1:
+            downside_deviation = negative_returns.std()
+            annualized_downside_deviation = downside_deviation * np.sqrt(365)
+            if annualized_downside_deviation > 0:
+                sortino_ratio = cagr / annualized_downside_deviation
+                print(f"Sortino Ratio:   {sortino_ratio:.3f}")
+            else:
+                print("Sortino Ratio:   inf") # No downside risk
+        else:
+            print("Sortino Ratio:   N/A (Not enough data)")
+    else:
+        print("Calmar/Sortino:  N/A (Backtest too short)")
 else:
     print("Max Drawdown:    0.00%")
     print("Calmar Ratio:    0.000")
+    print("Sortino Ratio:   0.000")
 
 trades_df = pd.DataFrame(trade_log)
 total_trades = len(trades_df)
