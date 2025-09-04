@@ -1,21 +1,21 @@
-Starting Optuna optimization for 100 trials...
-Best trial: 89. Best value: 2.36706: 100%|███████████████████████████████████████████| 100/100 [01:30<00:00,  1.10it/s]
+Starting Optuna optimization for 3000 trials...
+Best trial: 2781. Best value: 3.33418: 100%|███████████████████████████████████████| 3000/3000 [51:43<00:00,  1.03s/it]
 
 ============================== OPTIMIZATION FINISHED ==============================
-Number of finished trials: 100
+Number of finished trials: 3000
 Best trial:
-  Value (Calmar Ratio): 2.3671
+  Value (Calmar Ratio): 3.3342
   Params:
     donchianLength: 24
-    longTermSmaLen: 167
-    rsiLenLong: 25
-    rsiThLong: 74.14096058234867
-    emaFastLength: 13
-    smaSlowLength: 62
-    rsiLenShort: 57
+    longTermSmaLen: 176
+    rsiLenLong: 31
+    rsiThLong: 69.80002232260584
+    emaFastLength: 11
+    smaSlowLength: 77
+    rsiLenShort: 62
     rsiShortThresh: 46
-    shortTPPct: 5.7245987411538355
-    shortSLPct: 4.2991181555903974
+    shortTPPct: 10.666960786649067
+    shortSLPct: 4.629920984777441
 ==================================================================================
 
 

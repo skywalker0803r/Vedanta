@@ -202,7 +202,7 @@ def objective(trial):
 
 # ------------------------- MAIN EXECUTION -------------------------
 if __name__ == "__main__":
-    n_trials = 100
+    n_trials = 3000
     print(f"\nStarting Optuna optimization for {n_trials} trials...")
     
     study = optuna.create_study(direction='maximize')

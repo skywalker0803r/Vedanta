@@ -22,9 +22,9 @@ f_qty_by_pct(pct) =>
 // 多單參數（唐奇安 + 長期SMA + RSI）
 // ===============================
 donchianLength   = input.int(24,  title="【多】唐奇安通道週期", minval=5)
-longTermSmaLen   = input.int(167, title="【多】長期SMA濾網週期", minval=50)
-rsiLenLong       = input.int(25,  title="【多】RSI 週期", minval=5, maxval=100)
-rsiThLong        = input.float(74.14, title="【多】RSI 閾值", minval=0.0, maxval=100.0)
+longTermSmaLen   = input.int(176, title="【多】長期SMA濾網週期", minval=50)
+rsiLenLong       = input.int(31,  title="【多】RSI 週期", minval=5, maxval=100)
+rsiThLong        = input.float(69.80, title="【多】RSI 閾值", minval=0.0, maxval=100.0)
 
 // 指標計算（多）
 upperBand   = ta.highest(high, donchianLength)[1]
@@ -49,13 +49,13 @@ if strategy.position_size > 0
 // ===============================
 // 空單參數（EMA/SMA + RSI + 風控 + 冷靜期）
 // ===============================
-emaFastLength   = input.int(13,  title="【空】EMA 敏感週期", minval=5, step=1)
-smaSlowLength   = input.int(62, title="【空】SMA 穩定週期", minval=10, step=1)
-rsiLenShort     = input.int(57, title="【空】RSI 週期", minval=5, step=1)
+emaFastLength   = input.int(11,  title="【空】EMA 敏感週期", minval=5, step=1)
+smaSlowLength   = input.int(77, title="【空】SMA 穩定週期", minval=10, step=1)
+rsiLenShort     = input.int(62, title="【空】RSI 週期", minval=5, step=1)
 rsiShortThresh  = input.int(46, title="【空】RSI 進場門檻", minval=20, maxval=100, step=1)
 
-shortTPPct      = input.float(5.72, title="【空】止盈 (%)",          minval=0.5, step=0.1)
-shortSLPct      = input.float(4.30,  title="【空】止損 (%)",          minval=0.5, step=0.1)
+shortTPPct      = input.float(10.67, title="【空】止盈 (%)",          minval=0.5, step=0.1)
+shortSLPct      = input.float(4.63,  title="【空】止損 (%)",          minval=0.5, step=0.1)
 trailTriggerPct = input.float(8,  title="【空】移動停損觸發 (%)",   minval=0.1, step=0.1)
 trailOffsetPct  = input.float(4,  title="【空】移動停損距離 (%)",   minval=0.1, step=0.1)
 
