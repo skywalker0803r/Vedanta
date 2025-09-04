@@ -116,49 +116,59 @@ def backtest_signals(df: pd.DataFrame,
             max_price_during_hold = max(max_price_during_hold, high_)
             min_price_during_hold = min(min_price_during_hold, low_)
 
-            # --- 計算止盈/止損價格 ---
-            sl_price_long = entry_price * (1 - stop_loss) if stop_loss is not None else None
-            tp_price_long = entry_price * (1 + take_profit) if take_profit is not None else None
-            sl_price_short = entry_price * (1 + stop_loss) if stop_loss is not None else None
-            tp_price_short = entry_price * (1 - take_profit) if take_profit is not None else None
-            
-            # --- 檢查觸發條件 ---
-            hit_sl = False
-            hit_tp = False
+            # --- 檢查策略預設的出場信號 ---
+            if pd.notna(row.get('exit_price')) and row.get('exit_reason'):
+                should_exit = True
+                exit_reason = row['exit_reason']
+                exit_price = row['exit_price']
+            else:
+                # --- 計算止盈/止損價格 (如果策略沒有預設) ---
+                sl_price_long = row.get('stop_loss_level') if pd.notna(row.get('stop_loss_level')) else (entry_price * (1 - stop_loss) if stop_loss is not None else None)
+                tp_price_long = row.get('take_profit_level') if pd.notna(row.get('take_profit_level')) else (entry_price * (1 + take_profit) if take_profit is not None else None)
+                sl_price_short = row.get('stop_loss_level') if pd.notna(row.get('stop_loss_level')) else (entry_price * (1 + stop_loss) if stop_loss is not None else None)
+                tp_price_short = row.get('take_profit_level') if pd.notna(row.get('take_profit_level')) else (entry_price * (1 - take_profit) if take_profit is not None else None)
+                
+                # 處理移動止損 (如果策略有提供)
+                if entry_position == -1 and pd.notna(row.get('trailing_stop_level')):
+                    sl_price_short = row['trailing_stop_level']
 
-            if entry_position > 0:  # 多單
-                if sl_price_long is not None and low_ <= sl_price_long:
-                    hit_sl = True
-                if tp_price_long is not None and high_ >= tp_price_long:
-                    hit_tp = True
-            else:  # 空單
-                if sl_price_short is not None and high_ >= sl_price_short:
-                    hit_sl = True
-                if tp_price_short is not None and low_ <= tp_price_short:
-                    hit_tp = True
-            
-            # --- 決定出場價格 (最壞情況) ---
-            if hit_sl and hit_tp:
-                should_exit = True
-                exit_reason = 'Stop Loss (Worst Case)'
-                if entry_position > 0:
-                    exit_price = round_price(sl_price_long * (1 - fee_rate) * sell_slip, price_precision)
-                else:
-                    exit_price = round_price(sl_price_short * (1 + fee_rate) * buy_slip, price_precision)
-            elif hit_sl:
-                should_exit = True
-                exit_reason = 'Stop Loss'
-                if entry_position > 0:
-                    exit_price = round_price(sl_price_long * (1 - fee_rate) * sell_slip, price_precision)
-                else:
-                    exit_price = round_price(sl_price_short * (1 + fee_rate) * buy_slip, price_precision)
-            elif hit_tp:
-                should_exit = True
-                exit_reason = 'Take Profit'
-                if entry_position > 0:
-                    exit_price = round_price(tp_price_long * (1 - fee_rate) * sell_slip, price_precision)
-                else:
-                    exit_price = round_price(tp_price_short * (1 + fee_rate) * buy_slip, price_precision)
+                # --- 檢查觸發條件 ---
+                hit_sl = False
+                hit_tp = False
+
+                if entry_position > 0:  # 多單
+                    if sl_price_long is not None and low_ <= sl_price_long:
+                        hit_sl = True
+                    if tp_price_long is not None and high_ >= tp_price_long:
+                        hit_tp = True
+                else:  # 空單
+                    if sl_price_short is not None and high_ >= sl_price_short:
+                        hit_sl = True
+                    if tp_price_short is not None and low_ <= tp_price_short:
+                        hit_tp = True
+                
+                # --- 決定出場價格 (最壞情況) ---
+                if hit_sl and hit_tp:
+                    should_exit = True
+                    exit_reason = 'Stop Loss (Worst Case)'
+                    if entry_position > 0:
+                        exit_price = round_price(sl_price_long * (1 - fee_rate) * sell_slip, price_precision)
+                    else:
+                        exit_price = round_price(sl_price_short * (1 + fee_rate) * buy_slip, price_precision)
+                elif hit_sl:
+                    should_exit = True
+                    exit_reason = 'Stop Loss'
+                    if entry_position > 0:
+                        exit_price = round_price(sl_price_long * (1 - fee_rate) * sell_slip, price_precision)
+                    else:
+                        exit_price = round_price(sl_price_short * (1 + fee_rate) * buy_slip, price_precision)
+                elif hit_tp:
+                    should_exit = True
+                    exit_reason = 'Take Profit'
+                    if entry_position > 0:
+                        exit_price = round_price(tp_price_long * (1 - fee_rate) * sell_slip, price_precision)
+                    else:
+                        exit_price = round_price(tp_price_short * (1 + fee_rate) * buy_slip, price_precision)
 
             # --- 檢查其他出場條件 ---
             if not should_exit:
