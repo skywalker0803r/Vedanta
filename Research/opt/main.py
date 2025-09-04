@@ -88,6 +88,48 @@ def rsi(series, n):
     rs = ma_up / ma_down
     return 100 - (100 / (1 + rs))
 
+def print_performance_metrics(equity_curve, trades_df, initial_capital):
+    print("\n" + "="*30 + " PERFORMANCE METRICS " + "="*30)
+
+    # 1. Final Equity and PnL
+    final_equity = equity_curve[-1] if equity_curve else initial_capital
+    total_pnl_pct = (final_equity / initial_capital - 1.0) * 100.0
+    print(f"Initial Capital: {initial_capital:.2f}")
+    print(f"Final Equity:    {final_equity:.2f}")
+    print(f"Total PNL:       {total_pnl_pct:.2f}%")
+
+    # 2. Max Drawdown
+    if equity_curve:
+        equity_series = pd.Series(equity_curve, index=df.index[:len(equity_curve)])
+        peak = equity_series.expanding(min_periods=1).max()
+        drawdown = (equity_series - peak) / peak
+        max_drawdown_pct = abs(drawdown.min()) * 100.0
+        print(f"Max Drawdown:    {max_drawdown_pct:.2f}%")
+    else:
+        print("Max Drawdown:    0.00%")
+
+
+    # 3. Trade Stats
+    closed_trades_df = trades_df[trades_df['pnl'].notna()].copy()
+    total_trades = len(closed_trades_df)
+    
+    if total_trades > 0:
+        winning_trades = len(closed_trades_df[closed_trades_df['pnl'] > 0])
+        win_rate_pct = (winning_trades / total_trades) * 100.0
+        
+        gross_profit = closed_trades_df[closed_trades_df['pnl'] > 0]['pnl'].sum()
+        gross_loss = abs(closed_trades_df[closed_trades_df['pnl'] < 0]['pnl'].sum())
+        
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
+
+        print(f"Total Trades:    {total_trades}")
+        print(f"Win Rate:        {win_rate_pct:.2f}%")
+        print(f"Profit Factor:   {profit_factor:.3f}")
+    else:
+        print("Total Trades:    0")
+    
+    print("="*82 + "\n")
+
 # ------------------------- FETCH DATA -------------------------
 
 since_ms = to_ms(SINCE)
@@ -257,9 +299,8 @@ if equity_curve:
 
 # ------------------------- RESULTS -------------------------
 trades_df = pd.DataFrame(trade_log)
-final_equity = equity_curve[-1] if equity_curve else INITIAL_CAPITAL
-total_pnl_pct = (final_equity / INITIAL_CAPITAL - 1.0) * 100.0
-print(f"Initial capital: {INITIAL_CAPITAL}, Final equity: {final_equity:.6f}, TOTAL PNL% = {total_pnl_pct:.2f}%")
+
+print_performance_metrics(equity_curve, trades_df, INITIAL_CAPITAL)
 
 plt.figure(figsize=(10,5))
 plt.plot(df.index[:len(equity_curve)], equity_curve)
