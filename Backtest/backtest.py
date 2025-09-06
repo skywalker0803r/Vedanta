@@ -25,6 +25,7 @@ def backtest_signals(df: pd.DataFrame,
                      take_profit=None,
                      max_hold_bars=None,
                      slippage_rate=0.0000,
+                     capital_ratio = 1, # 每次使用的資金佔比
                      long_capital_ratio=1.0,  # 新增：多單倉位比例
                      short_capital_ratio=1.0, # 新增：空單倉位比例
                      maintenance_margin_ratio=0.005,
