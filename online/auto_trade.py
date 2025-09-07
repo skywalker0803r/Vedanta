@@ -1,6 +1,5 @@
 import ccxt
 import time
-import requests
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 import os

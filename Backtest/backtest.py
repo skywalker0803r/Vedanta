@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import warnings
+from datetime import timedelta
 
 def round_price(price, precision=8):
     """
@@ -24,7 +25,9 @@ def backtest_signals(df: pd.DataFrame,
                      take_profit=None,
                      max_hold_bars=None,
                      slippage_rate=0.0000,
-                     capital_ratio=1,
+                     capital_ratio = 1, # 每次使用的資金佔比
+                     long_capital_ratio=1.0,  # 新增：多單倉位比例
+                     short_capital_ratio=1.0, # 新增：空單倉位比例
                      maintenance_margin_ratio=0.005,
                      liquidation_penalty=1.0,
                      delay_entry=True,
@@ -45,7 +48,8 @@ def backtest_signals(df: pd.DataFrame,
     - take_profit (float): Take-profit percentage.
     - max_hold_bars (int): Maximum number of bars to hold a position.
     - slippage_rate (float): Slippage percentage.
-    - capital_ratio (float): Percentage of capital to use per trade.
+    - long_capital_ratio (float): Percentage of capital to use for long positions.
+    - short_capital_ratio (float): Percentage of capital to use for short positions.
     - maintenance_margin_ratio (float): Margin call/liquidation ratio.
     - liquidation_penalty (float): Penalty for liquidation (1.0 means losing all used capital).
     - delay_entry (bool): If True, a signal triggers a trade on the next bar's open.
@@ -61,13 +65,19 @@ def backtest_signals(df: pd.DataFrame,
     required_cols = ['open', 'high', 'low', 'close', 'signal', 'timestamp', 'position']
     if not all(col in df.columns for col in required_cols):
         raise ValueError(f"df 必須包含欄位: {required_cols}")
-    if not (0 < capital_ratio <= 1):
-        raise ValueError("capital_ratio 必須介於 0 與 1 之間")
+    if not (0 < long_capital_ratio <= 1) or not (0 < short_capital_ratio <= 1):
+        raise ValueError("long_capital_ratio 和 short_capital_ratio 必須介於 0 與 1 之間")
 
     df = df.copy().reset_index(drop=True)
 
     if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
         df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+    # === 新增: 計算 K 棒間隔 ===
+    if len(df) > 1:
+        bar_interval = df['timestamp'].iloc[1] - df['timestamp'].iloc[0]
+    else:
+        bar_interval = timedelta(hours=4) # 預設為 4 小時
 
     if delay_entry:
         df['target_position'] = df['position'].shift(1).fillna(0)
@@ -107,6 +117,7 @@ def backtest_signals(df: pd.DataFrame,
         exit_reason = None
         exit_price = None
         rtn = 0
+        capital_used = 0
 
         # ===== 出場判斷 (如果目前有部位) =====
         if entry_position != 0:
@@ -116,49 +127,59 @@ def backtest_signals(df: pd.DataFrame,
             max_price_during_hold = max(max_price_during_hold, high_)
             min_price_during_hold = min(min_price_during_hold, low_)
 
-            # --- 計算止盈/止損價格 ---
-            sl_price_long = entry_price * (1 - stop_loss) if stop_loss is not None else None
-            tp_price_long = entry_price * (1 + take_profit) if take_profit is not None else None
-            sl_price_short = entry_price * (1 + stop_loss) if stop_loss is not None else None
-            tp_price_short = entry_price * (1 - take_profit) if take_profit is not None else None
-            
-            # --- 檢查觸發條件 ---
-            hit_sl = False
-            hit_tp = False
+            # --- 檢查策略預設的出場信號 ---
+            if pd.notna(row.get('exit_price')) and row.get('exit_reason'):
+                should_exit = True
+                exit_reason = row['exit_reason']
+                exit_price = row['exit_price']
+            else:
+                # --- 計算止盈/止損價格 (如果策略沒有預設) ---
+                sl_price_long = row.get('stop_loss_level') if pd.notna(row.get('stop_loss_level')) else (entry_price * (1 - stop_loss) if stop_loss is not None else None)
+                tp_price_long = row.get('take_profit_level') if pd.notna(row.get('take_profit_level')) else (entry_price * (1 + take_profit) if take_profit is not None else None)
+                sl_price_short = row.get('stop_loss_level') if pd.notna(row.get('stop_loss_level')) else (entry_price * (1 + stop_loss) if stop_loss is not None else None)
+                tp_price_short = row.get('take_profit_level') if pd.notna(row.get('take_profit_level')) else (entry_price * (1 - take_profit) if take_profit is not None else None)
+                
+                # 處理移動止損 (如果策略有提供)
+                if entry_position == -1 and pd.notna(row.get('trailing_stop_level')):
+                    sl_price_short = row['trailing_stop_level']
 
-            if entry_position > 0:  # 多單
-                if sl_price_long is not None and low_ <= sl_price_long:
-                    hit_sl = True
-                if tp_price_long is not None and high_ >= tp_price_long:
-                    hit_tp = True
-            else:  # 空單
-                if sl_price_short is not None and high_ >= sl_price_short:
-                    hit_sl = True
-                if tp_price_short is not None and low_ <= tp_price_short:
-                    hit_tp = True
-            
-            # --- 決定出場價格 (最壞情況) ---
-            if hit_sl and hit_tp:
-                should_exit = True
-                exit_reason = 'Stop Loss (Worst Case)'
-                if entry_position > 0:
-                    exit_price = round_price(sl_price_long * (1 - fee_rate) * sell_slip, price_precision)
-                else:
-                    exit_price = round_price(sl_price_short * (1 + fee_rate) * buy_slip, price_precision)
-            elif hit_sl:
-                should_exit = True
-                exit_reason = 'Stop Loss'
-                if entry_position > 0:
-                    exit_price = round_price(sl_price_long * (1 - fee_rate) * sell_slip, price_precision)
-                else:
-                    exit_price = round_price(sl_price_short * (1 + fee_rate) * buy_slip, price_precision)
-            elif hit_tp:
-                should_exit = True
-                exit_reason = 'Take Profit'
-                if entry_position > 0:
-                    exit_price = round_price(tp_price_long * (1 - fee_rate) * sell_slip, price_precision)
-                else:
-                    exit_price = round_price(tp_price_short * (1 + fee_rate) * buy_slip, price_precision)
+                # --- 檢查觸發條件 ---
+                hit_sl = False
+                hit_tp = False
+
+                if entry_position > 0:  # 多單
+                    if sl_price_long is not None and low_ <= sl_price_long:
+                        hit_sl = True
+                    if tp_price_long is not None and high_ >= tp_price_long:
+                        hit_tp = True
+                else:  # 空單
+                    if sl_price_short is not None and high_ >= sl_price_short:
+                        hit_sl = True
+                    if tp_price_short is not None and low_ <= tp_price_short:
+                        hit_tp = True
+                
+                # --- 決定出場價格 (最壞情況) ---
+                if hit_sl and hit_tp:
+                    should_exit = True
+                    exit_reason = 'Stop Loss (Worst Case)'
+                    if entry_position > 0:
+                        exit_price = round_price(sl_price_long * (1 - fee_rate) * sell_slip, price_precision)
+                    else:
+                        exit_price = round_price(sl_price_short * (1 + fee_rate) * buy_slip, price_precision)
+                elif hit_sl:
+                    should_exit = True
+                    exit_reason = 'Stop Loss'
+                    if entry_position > 0:
+                        exit_price = round_price(sl_price_long * (1 - fee_rate) * sell_slip, price_precision)
+                    else:
+                        exit_price = round_price(sl_price_short * (1 + fee_rate) * buy_slip, price_precision)
+                elif hit_tp:
+                    should_exit = True
+                    exit_reason = 'Take Profit'
+                    if entry_position > 0:
+                        exit_price = round_price(tp_price_long * (1 - fee_rate) * sell_slip, price_precision)
+                    else:
+                        exit_price = round_price(tp_price_short * (1 + fee_rate) * buy_slip, price_precision)
 
             # --- 檢查其他出場條件 ---
             if not should_exit:
@@ -173,7 +194,7 @@ def backtest_signals(df: pd.DataFrame,
 
             # --- 執行出場 ---
             if should_exit:
-                capital_used = current_equity * capital_ratio
+                capital_used = current_equity * long_capital_ratio if entry_position > 0 else current_equity * short_capital_ratio
                 maintenance_margin = capital_used * maintenance_margin_ratio
 
                 if entry_position > 0:  # 多單
@@ -209,9 +230,14 @@ def backtest_signals(df: pd.DataFrame,
                 signal_exit = 'Margin call' if 'Liquidated' in exit_reason else '多單平倉' if entry_position > 0 else '空單平倉'
                 position_size = capital_used * leverage
 
+                # === 修正: 根據 delay_entry 調整進場時間 ===
+                entry_timestamp = df.iloc[entry_index]['timestamp']
+                if not delay_entry:
+                    entry_timestamp += bar_interval # 立即進場則使用 K 棒收盤時間
+
                 trades_log.append({
                     'Type': trade_type,
-                    'Date/Time (Entry)': df.iloc[entry_index]['timestamp'].strftime('%Y/%m/%d, %H:%M'),
+                    'Date/Time (Entry)': entry_timestamp.strftime('%Y/%m/%d, %H:%M'),
                     'Date/Time (Exit)': row['timestamp'].strftime('%Y/%m/%d, %H:%M'),
                     'Signal (Entry)': signal_entry,
                     'Signal (Exit)': signal_exit,
@@ -250,7 +276,7 @@ def backtest_signals(df: pd.DataFrame,
         unrealized_run_up_pct = 0
         unrealized_draw_down_pct = 0
 
-        capital_used = current_equity * capital_ratio
+        capital_used = current_equity * long_capital_ratio if entry_position > 0 else current_equity * short_capital_ratio
         position_size = capital_used * leverage
 
         if entry_position > 0:
@@ -267,9 +293,14 @@ def backtest_signals(df: pd.DataFrame,
         trade_type = 'Long' if entry_position > 0 else 'Short'
         signal_entry = '多單開倉' if entry_position > 0 else '空單開倉'
 
+        # === 修正: 根據 delay_entry 調整最後一個部位的進場時間 ===
+        entry_timestamp = df.iloc[entry_index]['timestamp']
+        if not delay_entry:
+            entry_timestamp += bar_interval # 立即進場則使用 K 棒收盤時間
+
         trades_log.append({
             'Type': trade_type,
-            'Date/Time (Entry)': df.iloc[entry_index]['timestamp'].strftime('%Y/%m/%d, %H:%M'),
+            'Date/Time (Entry)': entry_timestamp.strftime('%Y/%m/%d, %H:%M'),
             'Date/Time (Exit)': 'Open',
             'Signal (Entry)': signal_entry,
             'Signal (Exit)': 'Open',
@@ -328,16 +359,16 @@ def backtest_signals(df: pd.DataFrame,
 
     # 間隔字典
     interval_to_periods = {
-        '1m': 365 * 24 * 60,   # 525600
-        '5m': 365 * 24 * 12,   # 105120
-        '15m': 365 * 24 * 4,   # 35040
-        '30m': 365 * 24 * 2,   # 17520
-        '1h': 365 * 24,        # 8760
-        '2h': 365 * 12,        # 4380
-        '4h': 365 * 6,         # 2190
-        '8h': 365 * 3,         # 1095
-        '12h': 365 * 2,        # 730
-        '1d': 365              # 365
+        '1m': 365 * 24 * 60,  # 525600
+        '5m': 365 * 24 * 12,  # 105120
+        '15m': 365 * 24 * 4,  # 35040
+        '30m': 365 * 24 * 2,  # 17520
+        '1h': 365 * 24,       # 8760
+        '2h': 365 * 12,       # 4380
+        '4h': 365 * 6,        # 2190
+        '8h': 365 * 3,        # 1095
+        '12h': 365 * 2,       # 730
+        '1d': 365             # 365
     }
 
     # 決定 periods_per_year
@@ -402,6 +433,9 @@ def backtest_signals(df: pd.DataFrame,
         else:
             sortino_ratio = float('inf') if annualized_return > risk_free_rate else float('-inf') if annualized_return < risk_free_rate else 0.0
 
+    # Calmar Ratio
+    calmar_ratio = annualized_return/(-1*float(max_dd)) if max_dd < 0 else float('inf')
+
     # Expectancy 等其他指標
     if trade_returns:
         avg_win = np.mean(wins) if wins else 0
@@ -452,6 +486,7 @@ def backtest_signals(df: pd.DataFrame,
         'Risk/performance ratios': {
             'Sharpe Ratio': f'{sharpe_ratio:.2f}',
             'Sortino Ratio': f'{sortino_ratio:.2f}',
+            'Calmar Ratio' : f'{calmar_ratio:.2f}',
             'Profit Factor': f'{profit_factor:.2f}',
         },
         'fig': {
@@ -469,5 +504,6 @@ def backtest_signals(df: pd.DataFrame,
             'Max Drawdown': float(max_dd) if max_dd is not None else 0.0000,
             'Sharpe Ratio': float(sharpe_ratio) if sharpe_ratio is not None else 0.00,
             'Sortino Ratio': float(sortino_ratio) if sortino_ratio is not None else 0.00,
+            'Calmar Ratio' : float(calmar_ratio) if calmar_ratio is not None else 0.00,
         }
     }

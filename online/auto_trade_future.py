@@ -119,7 +119,7 @@ def align_to_interval(dt, interval_sec):
     return datetime.fromtimestamp(aligned_ts, tz=timezone.utc)
 
 # 主程序
-def auto_trade_futures(symbol="ETH/USDT", interval="1h",
+def auto_trade_futures(symbol="ETHUSDT", interval="1h",
                        usdt_percent_per_order=0.1,  # 每次用餘額的百分比（0.1=10%）
                        leverage=5, strategy=None,
                        run_once=True,
