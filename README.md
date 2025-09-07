@@ -64,6 +64,18 @@ Vedanta 是一個簡潔實用的加密貨幣交易策略回測與自動化交易
     -   `testsma.py`: 簡單移動平均線 (SMA) 交叉策略的測試實例，展示了如何從幣安獲取 K 線數據並生成交易信號。
     -   `williams.py`: 威廉指標 (%R) 策略，用於判斷超買超賣。
 
+## 範例檔案入口
+
+為了讓您快速了解專案的核心功能，我們提供了一系列範例檔案：
+
+- **回測範例**: `backtest_usage.ipynb`
+- **策略最佳化範例**: `TurtleMACDTimeZoneFilter_optimization_usage.ipynb`
+- **多參數最佳化分析範例**: `Multi_parameter_optimization_analysis_usage.ipynb`
+- **Telegram Bot 範例**: `telegram_message_bot_turtle.py`
+- **合約測試網交易範例**: `turtle_run.py`
+
+您可以從這些檔案開始，了解如何使用本專案的各項功能。
+
 ## 如何安裝環境
 ### 普通Python安裝
 
