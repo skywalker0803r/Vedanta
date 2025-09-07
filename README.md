@@ -88,6 +88,16 @@ Vedanta 是一個簡潔實用的加密貨幣交易策略回測與自動化交易
 2.  **配置線上交易 (可選):**
     複製 `.env-example` 為 `.env`，並填入您的 API 密鑰。
     *   如果需要進行線上自動交易，請根據 `online/` 目錄下的模組和 `run.py` 的範例，配置相關的 API 密鑰和交易參數。
+3. 運行範例
+    最佳化範例:
+    * TurtleMACDTimeZoneFilter_optimization_usage
+    * Multi_parameter_optimization_analysis_usage
+
+    TG機器人範例:  
+    * telegram_message_bot_turtle
+    
+    合約測試網交易範例:
+    * turtle_run
 
 ## 依賴套件
 
