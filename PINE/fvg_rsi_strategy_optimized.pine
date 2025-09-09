@@ -1,0 +1,88 @@
+//@version=5
+strategy("FVG RSI Strategy (Optimized)", overlay=true, initial_capital=100, default_qty_type=strategy.percent_of_equity, default_qty_value=25)
+
+// === Optimized User Input Parameters ===
+rsiLength       = input.int(10, "RSI Length", minval=1)
+rsiOverbought   = input.int(85, "RSI Overbought", minval=0, maxval=100)
+rsiOversold     = input.int(25, "RSI Oversold", minval=0, maxval=100)
+atrLength       = input.int(14, "ATR Length", minval=1)
+atrTPMultiplier = input.float(3.0, "ATR Take Profit Multiplier", minval=0.1)
+stopLossPct     = input.float(1.5, "Stop Loss Percentage (%)", minval=0.1)
+emaLengthLower  = input.int(15, "EMA Lower", minval=1)
+emaLengthUpper  = input.int(110, "EMA Upper", minval=1)
+
+// === Indicator Calculations ===
+rsi = ta.rsi(close, rsiLength)
+atr = ta.atr(atrLength)
+emaLower = ta.ema(close, emaLengthLower)
+emaUpper = ta.ema(close, emaLengthUpper)
+
+// FVG (Fair Value Gap)
+// fvg_up (bearish): high of 12 bars ago is lower than the current low
+fvg_up   = high[12] < low
+// fvg_down (bullish): low of 12 bars ago is higher than the current high
+fvg_down = low[12] > high
+
+// === Signal Conditions ===
+rsi_long_ok  = rsi < rsiOversold
+rsi_short_ok = rsi > rsiOverbought
+
+// Bullish Entry Condition
+is_bullish_signal = fvg_down and close > open and rsi_long_ok and close < emaLower and close < emaUpper
+
+// Bearish Entry Condition
+is_bearish_signal = fvg_up and close < open and rsi_short_ok and close > emaLower and close > emaUpper
+
+// === Trading State Variables ===
+var bool inTrade      = false
+var bool isLong       = false
+var float entryPrice  = na
+var float takeProfitPrice = na
+var float stopLossPrice   = na
+
+// === Entry Logic ===
+if not inTrade
+    if is_bullish_signal
+        strategy.entry("Long", strategy.long)
+        inTrade := true
+        isLong  := true
+        entryPrice := close
+        takeProfitPrice := entryPrice + atr * atrTPMultiplier
+        stopLossPrice   := entryPrice * (1 - stopLossPct / 100)
+        // plotchar(true, "Long Entry", "▲", location.belowbar, color.green, size=size.tiny)
+
+    if is_bearish_signal
+        strategy.entry("Short", strategy.short)
+        inTrade := true
+        isLong  := false
+        entryPrice := close
+        takeProfitPrice := entryPrice - atr * atrTPMultiplier
+        stopLossPrice   := entryPrice * (1 + stopLossPct / 100)
+        // plotchar(true, "Short Entry", "▼", location.abovebar, color.red, size=size.tiny)
+
+// === Exit Logic ===
+if inTrade
+    if isLong
+        if close >= takeProfitPrice
+            strategy.close("Long", comment="Long TP")
+            inTrade := false
+            isLong  := false
+            // plotchar(true, "Long TP", "✔️", location.abovebar, color.blue, size=size.tiny)
+        else if close <= stopLossPrice
+            strategy.close("Long", comment="Long SL")
+            inTrade := false
+            isLong  := false
+            // plotchar(true, "Long SL", "✖️", location.belowbar, color.orange, size=size.tiny)
+    else // isShort
+        if close <= takeProfitPrice
+            strategy.close("Short", comment="Short TP")
+            inTrade := false
+            // plotchar(true, "Short TP", "✔️", location.belowbar, color.blue, size=size.tiny)
+        else if close >= stopLossPrice
+            strategy.close("Short", comment="Short SL")
+            inTrade := false
+            // plotchar(true, "Short SL", "✖️", location.abovebar, color.orange, size=size.tiny)
+
+// Plot EMAs
+plot(emaLower, color=color.blue, title="EMA Lower", linewidth=2)
+plot(emaUpper, color=color.orange, title="EMA Upper", linewidth=2)
