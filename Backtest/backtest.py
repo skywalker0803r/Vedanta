@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import warnings
 from datetime import timedelta
+import sys
 
 def round_price(price, precision=8):
     """
@@ -340,7 +341,7 @@ def backtest_signals(df: pd.DataFrame,
     gross_profit_usdt = sum(pnl for pnl in trade_pnls_usdt if pnl > 0)
     gross_loss_usdt = sum(pnl for pnl in trade_pnls_usdt if pnl <= 0)
     
-    profit_factor = np.inf if abs(gross_loss_usdt) < 1e-9 else gross_profit_usdt / abs(gross_loss_usdt)
+    profit_factor = sys.float_info.max if abs(gross_loss_usdt) < 1e-9 else gross_profit_usdt / abs(gross_loss_usdt)
 
     buy_and_hold_return = (df['buy_and_hold'].iloc[-1] / initial_capital - 1) * 100
 
@@ -417,7 +418,7 @@ def backtest_signals(df: pd.DataFrame,
         if annualized_volatility > 0:
             sharpe_ratio = (annualized_return - risk_free_rate) / annualized_volatility
         else:
-            sharpe_ratio = float('inf') if annualized_return > risk_free_rate else float('-inf') if annualized_return < risk_free_rate else 0.0
+            sharpe_ratio = sys.float_info.max if annualized_return > risk_free_rate else (-sys.float_info.max if annualized_return < risk_free_rate else 0.0)
 
         # --- Sortino ratio ---
         daily_simple = np.expm1(log_returns)  # 轉換為簡單回報
@@ -431,10 +432,10 @@ def backtest_signals(df: pd.DataFrame,
         if downside_deviation > 0:
             sortino_ratio = (annualized_return - risk_free_rate) / downside_deviation
         else:
-            sortino_ratio = float('inf') if annualized_return > risk_free_rate else float('-inf') if annualized_return < risk_free_rate else 0.0
+            sortino_ratio = sys.float_info.max if annualized_return > risk_free_rate else (-sys.float_info.max if annualized_return < risk_free_rate else 0.0)
 
     # Calmar Ratio
-    calmar_ratio = annualized_return/(-1*float(max_dd)) if max_dd < 0 else float('inf')
+    calmar_ratio = annualized_return/(-1*float(max_dd)) if max_dd < 0 else sys.float_info.max
 
     # Expectancy 等其他指標
     if trade_returns:
@@ -464,6 +465,26 @@ def backtest_signals(df: pd.DataFrame,
             current_consecutive_wins = 0
             max_consecutive_losses = max(max_consecutive_losses, current_consecutive_losses)
 
+    # --- Handle no trades scenario ---
+    if not trade_returns:
+        annualized_return = -sys.float_info.max
+        annualized_volatility = 0.0 # No volatility if no trades
+        sharpe_ratio = -sys.float_info.max
+        sortino_ratio = -sys.float_info.max
+        calmar_ratio = -sys.float_info.max
+        profit_factor = 0.0 # No profit factor if no trades
+        max_dd = 1.0 # 100% drawdown if no trades (or no profit)
+        expectancy = -sys.float_info.max
+        # Set other relevant metrics to penalizing values if they are used by MPOA
+        # For example, if MPOA uses total_return, set it to a very low value
+        total_return = -sys.float_info.max
+        net_profit_usdt = -sys.float_info.max
+        gross_profit_usdt = 0.0
+        gross_loss_usdt = 0.0
+        wins = []
+        losses = []
+        trade_pnls_usdt = []
+        
     return {
         'Overview performance': {
             'Total P&L': f'{(net_profit_usdt / initial_capital) * 100:,.2f}%',
