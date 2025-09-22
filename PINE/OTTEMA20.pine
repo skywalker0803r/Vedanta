@@ -1,0 +1,151 @@
+//@version=5
+strategy("OTT + EMA20 分批出場策略｜TP1後移動停利｜GMMA糾結過濾 + 六日不開單",
+     overlay=true,
+     default_qty_type=strategy.percent_of_equity,
+     default_qty_value=100,
+     pyramiding=0,
+     commission_type=strategy.commission.percent,
+     commission_value=0)
+
+// ===== 參數 =====
+src            = input(close, "Source")
+length         = input.int(3,  "OTT Period")
+percent        = input.float(1.4, "OTT Percent", minval=0.1)
+rr             = input.float(1.5, "RR 倍數", minval=0.1)
+swingLen       = input.int(20, "前高低偵測區間")
+buyEmaLen      = input.int(20, "EMA 多單過濾週期")
+sellEmaLen     = input.int(37, "EMA 空單過濾週期")
+gmmaThreshold  = input.float(0.005, "GMMA 糾結閾值", step=0.001)
+emaOutLen      = input.int(30, "EMA 出場")
+needCloseCross = input.bool(true, "出場用『收盤穿越』")
+
+// ===== 六/日不開單 =====
+isWeekend = dayofweek == dayofweek.saturday or dayofweek == dayofweek.sunday
+
+// ===== 均線 & GMMA Spread =====
+emabuy  = ta.ema(close, buyEmaLen)
+emasell = ta.ema(close, sellEmaLen)
+emaOut  = ta.ema(close, emaOutLen)
+prevLow  = ta.lowest(low, swingLen)
+prevHigh = ta.highest(high, swingLen)
+
+// 固定 GMMA EMA
+ema3  = ta.ema(close, 3)
+ema5  = ta.ema(close, 5)
+ema8  = ta.ema(close, 8)
+ema10 = ta.ema(close,10)
+ema12 = ta.ema(close,12)
+ema15 = ta.ema(close,15)
+ema30_ = ta.ema(close,30)
+ema35 = ta.ema(close,35)
+ema40 = ta.ema(close,40)
+ema45 = ta.ema(close,45)
+ema50 = ta.ema(close,50)
+ema60 = ta.ema(close,60)
+
+gmmaHigh = math.max(ema3, ema5, ema8, ema10, ema12, ema15, ema30_, ema35, ema40, ema45, ema50, ema60)
+gmmaLow  = math.min(ema3, ema5, ema8, ema10, ema12, ema15, ema30_, ema35, ema40, ema45, ema50, ema60)
+gmmaSpread = (gmmaHigh - gmmaLow) / close
+isConsolidating = gmmaSpread < gmmaThreshold
+
+// ===== OTT 主邏輯 =====
+Var_Func(_src, _length) =>
+    valpha = 2 / (_length + 1)
+    vud1 = _src > _src[1] ? _src - _src[1] : 0
+    vdd1 = _src < _src[1] ? _src[1] - _src : 0
+    vUD = math.sum(vud1, 9)
+    vDD = math.sum(vdd1, 9)
+    vCMO = nz((vUD - vDD) / (vUD + vDD))
+    VAR = 0.0
+    VAR := nz(valpha * math.abs(vCMO) * _src) + (1 - valpha * math.abs(vCMO)) * nz(VAR[1])
+
+getOTT(_src, _length, _percent) =>
+    MAvg = Var_Func(_src, _length)
+    fark = MAvg * _percent * 0.01
+    longStop = MAvg - fark
+    longStopPrev = nz(longStop[1], longStop)
+    longStop := MAvg > longStopPrev ? math.max(longStop, longStopPrev) : longStop
+
+    shortStop = MAvg + fark
+    shortStopPrev = nz(shortStop[1], shortStop)
+    shortStop := MAvg < shortStopPrev ? math.min(shortStop, shortStopPrev) : shortStop
+
+    var dir = 1
+    dir := na(dir[1]) ? 1 : dir[1]
+    dir := dir == -1 and MAvg > shortStopPrev ? 1 : dir == 1 and MAvg < longStopPrev ? -1 : dir
+    MT = dir == 1 ? longStop : shortStop
+    OTT = MAvg > MT ? MT * (200 + _percent) / 200 : MT * (200 - _percent) / 200
+    [MAvg, OTT]
+
+[MAvg, OTT] = getOTT(src, length, percent)
+
+// ===== 進場條件（含 GMMA 過濾 + 週末排除） =====
+longSignal  = ta.crossover(MAvg, OTT) and close > emabuy  and not isConsolidating and not isWeekend
+shortSignal = ta.crossunder(MAvg, OTT) and close < emasell and not isConsolidating and not isWeekend
+
+// ===== 狀態變數 =====
+var float longEntry  = na
+var float shortEntry = na
+var float tp1_long   = na
+var float tp1_short  = na
+var bool  trailLong  = false
+var bool  trailShort = false
+
+// ===== 多單 =====
+if (longSignal)
+    longEntry := close
+    trailLong := false
+    sl = prevLow
+    tp1_long := longEntry + (longEntry - sl) * rr
+    // 部分出場 + 全倉SL
+    strategy.entry("Long", strategy.long, comment="多單")
+    strategy.exit("TP1-Long", from_entry="Long", limit=tp1_long, qty_percent=50)
+    strategy.exit("SL-Long",  from_entry="Long", stop=sl)
+
+// 達成 TP1 才啟動 EMA 追蹤
+if strategy.position_size > 0 and not trailLong and na(tp1_long) == false and close >= tp1_long
+    trailLong := true
+
+// 出場採「收盤穿越」或「即時穿越」兩種模式（參數可選）
+longExitNow   = trailLong and (needCloseCross ? ta.crossunder(close, emaOut) : close < emaOut)
+if longExitNow
+    strategy.close("Long", comment="TP1後 EMA 移動停利")
+
+// ===== 空單 =====
+if (shortSignal)
+    shortEntry := close
+    trailShort := false
+    sl = prevHigh
+    tp1_short := shortEntry - (sl - shortEntry) * rr
+    strategy.entry("Short", strategy.short, comment="空單")
+    strategy.exit("TP1-Short", from_entry="Short", limit=tp1_short, qty_percent=50)
+    strategy.exit("SL-Short",  from_entry="Short", stop=sl)
+
+// 達成 TP1 才啟動 EMA 追蹤
+if strategy.position_size < 0 and not trailShort and na(tp1_short) == false and close <= tp1_short
+    trailShort := true
+
+shortExitNow  = trailShort and (needCloseCross ? ta.crossover(close, emaOut) : close > emaOut)
+if shortExitNow
+    strategy.close("Short", comment="TP1後 EMA 移動停利")
+
+// ===== 扣掉持倉時重置旗標 =====
+if strategy.position_size == 0
+    trailLong  := false
+    trailShort := false
+    tp1_long   := na
+    tp1_short  := na
+
+// ===== 顯示純 OTT 訊號（不含過濾） =====
+pureBuySignal  = ta.crossover(MAvg, OTT)
+pureSellSignal = ta.crossunder(MAvg, OTT)
+plotshape(pureBuySignal,  title="OTT 多頭交叉買入",  style=shape.arrowup,   location=location.belowbar, color=color.new(color.green,0), size=size.tiny,  text="BUY")
+plotshape(pureSellSignal, title="OTT 空頭交叉賣出", style=shape.arrowdown, location=location.abovebar, color=color.new(color.red,0),   size=size.tiny,  text="SELL")
+
+// ===== 視覺化 =====
+plot(MAvg, "VAR-MAvg", color=color.new(color.aqua, 0), linewidth=2)
+plot(OTT,  "OTT",      color=color.new(color.purple, 0), linewidth=2)
+plot(emabuy,  "EMA 多單過濾",  color=color.new(color.green, 70))
+plot(emasell, "EMA 空單過濾",  color=color.new(color.red,   70))
+plot(emaOut,  "EMA 出場",     color=color.new(color.yellow, 0), linewidth=2)
+bgcolor(isConsolidating ? color.new(color.gray, 92) : na)
