@@ -27,9 +27,9 @@ LIVE_HOST = "https://api.gateio.ws/api/v4"
 HOST = LIVE_HOST      # <- 正式上線
 
 # --- 交易參數 ---
-CURRENCY_PAIR = "SOL_USDT"       # 交易對
-PRINCIPAL_USDT = Decimal("10")   # 每次投入的本金 (USDT)
-TARGET_VOLUME_USDT = Decimal("100") # 目標總交易量 (USDT)
+CURRENCY_PAIR = "STRIKE_USDT"       # 交易對
+PRINCIPAL_USDT = Decimal("100")   # 每次投入的本金 (USDT)
+TARGET_VOLUME_USDT = Decimal("3000") # 目標總交易量 (USDT)
 ORDER_TIMEOUT_SECONDS = 60       # 訂單等待成交的超時時間 (秒)
 # ----------------------------
 
@@ -85,11 +85,19 @@ def wait_for_order_fill(spot_api, order_id, currency_pair, timeout_seconds):
     # 如果超時
     print(f"\n訂單 {order_id} 在 {timeout_seconds} 秒內未成交，正在取消訂單...")
     try:
-        spot_api.cancel_order(order_id, currency_pair)
+        # 取消訂單並獲取最終訂單狀態
+        cancelled_order = spot_api.cancel_order(order_id, currency_pair)
         print(f"訂單 {order_id} 已取消。")
+        # 即使取消，也返回最終訂單狀態，以便主循環可以檢查部分成交
+        return cancelled_order
     except GateApiException as e:
         print(f"\n取消訂單 {order_id} 失敗: {e}")
-    return None
+        # 如果取消失敗，嘗試重新獲取訂單狀態作為最後手段
+        try:
+            return spot_api.get_order(order_id, currency_pair)
+        except GateApiException as ex:
+            print(f"\n獲取最終訂單狀態也失敗: {ex}")
+            return None
 
 
 def main():
@@ -101,10 +109,20 @@ def main():
     accumulated_volume = Decimal("0")
     cycle_count = 0
 
+    # --- 查詢初始餘額 ---
+    initial_usdt_balance = Decimal("0")
+    try:
+        usdt_accounts = spot_api.list_spot_accounts(currency='USDT')
+        if usdt_accounts:
+            initial_usdt_balance = Decimal(usdt_accounts[0].available)
+    except GateApiException as e:
+        print(f"查詢初始餘額失敗: {e}")
+
     print("--- 自動交易量機器人已啟動 ---")
     print(f"交易對: {CURRENCY_PAIR}")
     print(f"本金: {PRINCIPAL_USDT} USDT")
     print(f"目標交易量: {TARGET_VOLUME_USDT:,.2f} USDT")
+    print(f"初始 USDT 餘額: {initial_usdt_balance:,.4f} USDT")
     print("---------------------------------")
 
     try:
@@ -112,8 +130,12 @@ def main():
         pair_info = spot_api.get_currency_pair(CURRENCY_PAIR)
         price_precision = getattr(pair_info, 'precision', None)
         amount_precision = getattr(pair_info, 'amount_precision', None)
-        if price_precision is None or amount_precision is None:
-            raise RuntimeError("無法取得交易對的精度資訊。 সন")
+        min_quote_amount = getattr(pair_info, 'min_quote_amount', None)
+        if price_precision is None or amount_precision is None or min_quote_amount is None:
+            raise RuntimeError("無法取得交易對的精度或最小下單金額資訊。")
+        
+        min_quote_amount = Decimal(min_quote_amount)
+        print(f"最小下單金額: {min_quote_amount} USDT")
             
         price_quantizer = Decimal('1').scaleb(-int(price_precision))
         amount_quantizer = Decimal('1').scaleb(-int(amount_precision))
@@ -123,15 +145,42 @@ def main():
             cycle_count += 1
             print(f"\n--- 循環 {cycle_count} | 目前交易量: {accumulated_volume:,.2f} USDT ---")
 
+            # --- 記錄循環前餘額 ---
+            usdt_balance_before_cycle = Decimal("0")
+            try:
+                usdt_accounts = spot_api.list_spot_accounts(currency='USDT')
+                if usdt_accounts:
+                    usdt_balance_before_cycle = Decimal(usdt_accounts[0].available)
+            except GateApiException as e:
+                print(f"查詢循環前餘額失敗: {e}")
+
             # --- 買入 ---
             print("步驟 1: 執行買入")
+
+            # --- 使用當前可用餘額或設定的本金（取較小者）進行購買 ---
+            available_usdt = Decimal("0")
+            try:
+                usdt_accounts = spot_api.list_spot_accounts(currency='USDT')
+                if usdt_accounts:
+                    available_usdt = Decimal(usdt_accounts[0].available)
+            except GateApiException as e:
+                print(f"查詢可用 USDT 餘額失敗: {e}，終止循環。")
+                break # 中斷主循環
+
+            buy_principal = min(available_usdt, PRINCIPAL_USDT)
+            
+            if buy_principal < min_quote_amount:
+                print(f"可用資金 ({buy_principal:.4f} USDT) 不足，小於最小下單金額 {min_quote_amount} USDT。")
+                print("機器人停止。")
+                break # 資金不足，中斷主循環
+
             # 取得最新報價
             tickers = spot_api.list_tickers(currency_pair=CURRENCY_PAIR)
             buy_price = Decimal(tickers[0].highest_bid)
             buy_price_aligned = decimal_round_down(buy_price, price_quantizer)
             
             # 計算數量
-            amount = PRINCIPAL_USDT / buy_price_aligned
+            amount = buy_principal / buy_price_aligned
             amount_aligned = decimal_round_down(amount, amount_quantizer)
 
             if amount_aligned <= 0:
@@ -149,24 +198,50 @@ def main():
 
             # 等待買單成交
             filled_buy_order = wait_for_order_fill(spot_api, created_buy_order.id, CURRENCY_PAIR, ORDER_TIMEOUT_SECONDS)
+
             if not filled_buy_order:
-                print("買單未成功，終止本次循環。")
+                print("買單處理失敗，無法獲取最終狀態，終止本次循環。")
+                continue
+
+            # 檢查是否有任何成交量
+            buy_volume = Decimal(filled_buy_order.filled_total)
+            if buy_volume <= 0:
+                print("買單最終無成交，終止本次循環。")
                 continue
             
             # 更新交易量
-            buy_volume = Decimal(filled_buy_order.filled_total)
+            print(f"\n買單部分或完全成交，成交金額: {buy_volume:.4f} USDT")
             accumulated_volume += buy_volume
             print_progress(accumulated_volume, TARGET_VOLUME_USDT)
 
             # --- 賣出 ---
-            print("\n步驟 2: 執行賣出")
+            # print("\n步驟 2: 執行賣出") # 改為在迴圈內打印
+            
+            # 為確保賣出數量精確 (考慮手續費等因素)，直接查詢帳戶可用餘額
+            base_currency = CURRENCY_PAIR.split('_')[0]
+            try:
+                spot_accounts = spot_api.list_spot_accounts(currency=base_currency)
+                if not spot_accounts:
+                    print(f"\n錯誤：無法查詢到 {base_currency} 的餘額。")
+                    continue # 跳過此循環
+                
+                available_balance = Decimal(spot_accounts[0].available)
+                sell_amount_aligned = decimal_round_down(available_balance, amount_quantizer)
+
+            except GateApiException as e:
+                print(f"\n查詢 {base_currency} 餘額時出錯: {e}，終止本次循環。")
+                continue
+
+            if sell_amount_aligned <= 0:
+                print(f"\n基礎貨幣 {base_currency} 可用餘額為 0 或過少，無法賣出。")
+                continue
+
             asset_sold = False
             sell_attempt = 0
-
             # 賣出迴圈，直到成功賣出為止
             while not asset_sold:
                 sell_attempt += 1
-                print(f"\n第 {sell_attempt} 次嘗試賣出...")
+                print(f"\n第 {sell_attempt} 次嘗試賣出 {sell_amount_aligned} {base_currency}...")
 
                 # 第一次嘗試以 (買價+1 tick) 的價格賣出，後續嘗試以當前市場最高買價賣出
                 if sell_attempt == 1:
@@ -183,10 +258,14 @@ def main():
                         continue
 
                 sell_price_aligned = decimal_round_down(sell_price, price_quantizer)
-                
-                # 賣出數量等於實際買入數量
-                sell_amount = Decimal(filled_buy_order.amount)
-                sell_amount_aligned = decimal_round_down(sell_amount, amount_quantizer)
+
+                # --- 檢查是否滿足最小下單金額 ---
+                sell_value = sell_amount_aligned * sell_price_aligned
+                if sell_value < min_quote_amount:
+                    print(f"\n賣出價值 ({sell_value:.4f} USDT) 過低，小於最小金額 {min_quote_amount} USDT，無法賣出。")
+                    print("此部分資產將留在帳戶中，本循環結束。")
+                    asset_sold = True # 標記為已處理，以跳出賣出迴圈
+                    continue
 
                 # 下賣單
                 sell_order = gate_api.Order(
@@ -200,14 +279,50 @@ def main():
                 # 等待賣單成交
                 filled_sell_order = wait_for_order_fill(spot_api, created_sell_order.id, CURRENCY_PAIR, ORDER_TIMEOUT_SECONDS)
                 
-                if filled_sell_order:
+                # 檢查賣單是否真的有成交
+                if filled_sell_order and Decimal(filled_sell_order.filled_total) > 0:
                     asset_sold = True # 標記為已售出，跳出 while 迴圈
                     # 更新交易量
                     sell_volume = Decimal(filled_sell_order.filled_total)
                     accumulated_volume += sell_volume
                     print_progress(accumulated_volume, TARGET_VOLUME_USDT)
+
+                    # --- 計算本次循環磨損 ---
+                    usdt_balance_after_cycle = Decimal("0")
+                    try:
+                        usdt_accounts = spot_api.list_spot_accounts(currency='USDT')
+                        if usdt_accounts:
+                            usdt_balance_after_cycle = Decimal(usdt_accounts[0].available)
+                        
+                        if usdt_balance_before_cycle > 0:
+                            cycle_slippage = usdt_balance_before_cycle - usdt_balance_after_cycle
+                            if cycle_slippage >= 0:
+                                sys.stdout.write(f" | 本次循環磨損: {cycle_slippage:,.4f} USDT")
+                            else:
+                                sys.stdout.write(f" | 本次循環獲利: {-cycle_slippage:,.4f} USDT")
+                            sys.stdout.flush()
+
+                    except GateApiException as e:
+                        print(f" | 查詢循環後餘額失敗: {e}")
+
                 else:
-                    print("本次賣單嘗試未成功，將自動重新嘗試...")
+                    print("\n本次賣單嘗試未成功或無成交，將自動重新嘗試...")
+                    # 在重試之前，最好再次檢查餘額，因為訂單可能部分成交後被取消
+                    try:
+                        spot_accounts = spot_api.list_spot_accounts(currency=base_currency)
+                        if spot_accounts:
+                            available_balance = Decimal(spot_accounts[0].available)
+                            sell_amount_aligned = decimal_round_down(available_balance, amount_quantizer)
+                            if sell_amount_aligned <= 0:
+                                print(f"{base_currency} 餘額已為 0，停止賣出嘗試。")
+                                asset_sold = True # 餘額為0，也算“處理完畢”，跳出迴圈
+                        else:
+                            print(f"無法重新查詢 {base_currency} 餘額，停止賣出嘗試。")
+                            asset_sold = True # 避免無限迴圈
+                    except GateApiException as e:
+                        print(f"重新查詢餘額時出錯: {e}，停止賣出嘗試。")
+                        asset_sold = True # 避免無限迴圈
+                    
                     time.sleep(2) # 短暫等待後，進入下一次 while 迴圈
 
 
@@ -218,6 +333,23 @@ def main():
     finally:
         print("\n\n--- 機器人執行完畢 ---")
         print(f"最終總交易量: {accumulated_volume:,.2f} / {TARGET_VOLUME_USDT:,.2f} USDT")
+        
+        # --- 顯示最終結果 ---
+        final_usdt_balance = Decimal("0")
+        try:
+            usdt_accounts = spot_api.list_spot_accounts(currency='USDT')
+            if usdt_accounts:
+                final_usdt_balance = Decimal(usdt_accounts[0].available)
+            print(f"最終 USDT 餘額: {final_usdt_balance:,.4f} USDT")
+        except GateApiException as e:
+            print(f"查詢最終餘額失敗: {e}")
+
+        if initial_usdt_balance > 0:
+            total_slippage = initial_usdt_balance - final_usdt_balance
+            if total_slippage >= 0:
+                print(f"總磨損: {total_slippage:,.4f} USDT")
+            else:
+                print(f"總獲利: {-total_slippage:,.4f} USDT")
 
 if __name__ == "__main__":
     main()
