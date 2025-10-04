@@ -28,10 +28,10 @@ HOST = LIVE_HOST      # <- 正式上線
 
 # --- 交易參數 ---
 SETTLE = "usdt"                     # 結算貨幣 (usdt / btc)
-CONTRACT = "P_USDT"               # 交易對
+CONTRACT = "MIRA_USDT"               # 交易對
 LEVERAGE = "10"                      # 槓桿倍數
-POSITION_SIZE_USDT = Decimal("100") # 每次開倉的倉位價值 (USDT)
-TARGET_VOLUME_USDT = Decimal("500")# 目標總交易量 (USDT)
+POSITION_SIZE_USDT = Decimal("500") # 每次開倉的倉位價值 (USDT)
+TARGET_VOLUME_USDT = Decimal("1500")# 目標總交易量 (USDT)
 ORDER_TIMEOUT_SECONDS = 10          # 訂單等待成交的超時時間 (秒)
 # ----------------------------
 
@@ -164,27 +164,44 @@ def main():
             # --- 步驟 1: 開多倉 ---
             print("步驟 1: 執行開多倉")
             
-            # 檢查可用餘額是否足夠開倉
-            # 所需保證金 = 倉位價值 / 槓桿
+            # 自動調整開倉價值
+            order_size_dec = POSITION_SIZE_USDT
             required_margin = POSITION_SIZE_USDT / Decimal(LEVERAGE)
+
             if usdt_balance_before_cycle < required_margin:
-                print(f"可用餘額 ({usdt_balance_before_cycle:.4f} USDT) 不足，無法開立價值 {POSITION_SIZE_USDT} USDT 的倉位 (需要 {required_margin:.4f} USDT)。 সন")
+                print(f"可用餘額 ({usdt_balance_before_cycle:.4f} USDT) 不足預設倉位所需保證金 ({required_margin:.4f} USDT)，將自動縮小倉位。")
+                # 使用 99% 的可用餘額來計算倉位價值，留出一些緩衝
+                order_size_dec = (usdt_balance_before_cycle * Decimal('0.99')) * Decimal(LEVERAGE)
+                order_size_dec = order_size_dec.quantize(Decimal('1'), rounding=ROUND_DOWN)
+
+            if order_size_dec < min_order_size:
+                print(f"計算出的倉位價值 ({order_size_dec} USDT) 小於最小下單價值 {min_order_size} USDT。")
                 print("機器人停止。 সন")
                 break
+            
+            # 再次檢查調整後的保證金是否足夠
+            final_required_margin = order_size_dec / Decimal(LEVERAGE)
+            if usdt_balance_before_cycle < final_required_margin:
+                 print(f"可用餘額 ({usdt_balance_before_cycle:.4f} USDT) 仍不足以開立調整後的倉位 (需要 {final_required_margin:.4f} USDT)。")
+                 print("機器人停止。 সন")
+                 break
 
-            if POSITION_SIZE_USDT < min_order_size:
-                print(f"設定的倉位價值 ({POSITION_SIZE_USDT} USDT) 小於最小下單價值 {min_order_size} USDT。 সন")
-                print("機器人停止。 সন")
-                break
-
-            # 獲取最新報價
-            tickers = futures_api.list_futures_tickers(settle=SETTLE, contract=CONTRACT)
-            # 經測試, ticker 物件沒有 ask/bid 屬性，改為使用 'last' (最新成交價)
-            open_price = Decimal(tickers[0].last)
-            open_price_aligned = decimal_round_down(open_price, price_quantizer)
+            # 獲取最新報價 (吃單策略: 使用賣一價)
+            try:
+                order_book = futures_api.list_futures_order_book(settle=SETTLE, contract=CONTRACT, limit=1)
+                if not order_book.asks or not order_book.asks[0].p:
+                    print("訂單簿賣方為空，無法獲取開倉價格，跳過此循環。")
+                    time.sleep(5)
+                    continue
+                open_price = Decimal(order_book.asks[0].p)
+                open_price_aligned = decimal_round_down(open_price, price_quantizer)
+            except GateApiException as e:
+                print(f"獲取訂單簿失敗: {e}，跳過此循環。")
+                time.sleep(5)
+                continue
             
             # 下開倉單
-            order_size = int(POSITION_SIZE_USDT)
+            order_size = int(order_size_dec)
             open_order = gate_api.FuturesOrder(
                 contract=CONTRACT,
                 size=order_size, # 正數為開多
@@ -217,7 +234,7 @@ def main():
             print_progress(accumulated_volume, TARGET_VOLUME_USDT)
 
             # --- 步驟 2: 平多倉 ---
-            time.sleep(2) # 短暫等待，確保倉位狀態更新
+            time.sleep(0.5) # 短暫等待，確保倉位狀態更新
 
             # 查詢當前倉位
             current_position = None
@@ -245,14 +262,17 @@ def main():
                 close_attempt += 1
                 print(f"\n第 {close_attempt} 次嘗試平倉...")
 
-                # 獲取最新報價
+                # 獲取最新報價 (吃單策略: 使用買一價)
                 try:
-                    tickers = futures_api.list_futures_tickers(settle=SETTLE, contract=CONTRACT)
-                    # 經測試, ticker 物件沒有 ask/bid 屬性，改為使用 'last' (最新成交價)
-                    close_price = Decimal(tickers[0].last)
+                    order_book = futures_api.list_futures_order_book(settle=SETTLE, contract=CONTRACT, limit=1)
+                    if not order_book.bids or not order_book.bids[0].p:
+                        print("訂單簿買方為空，無法獲取平倉價格，等待 5 秒後重試...")
+                        time.sleep(5)
+                        continue
+                    close_price = Decimal(order_book.bids[0].p)
                     close_price_aligned = decimal_round_down(close_price, price_quantizer)
-                except Exception as e:
-                    print(f"獲取最新價格失敗: {e}，等待 5 秒後重試...")
+                except GateApiException as e:
+                    print(f"獲取訂單簿失敗: {e}，等待 5 秒後重試...")
                     time.sleep(5)
                     continue
 
