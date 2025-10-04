@@ -31,7 +31,7 @@ SETTLE = "usdt"                     # 結算貨幣 (usdt / btc)
 CONTRACT = "MIRA_USDT"               # 交易對
 LEVERAGE = "10"                      # 槓桿倍數
 POSITION_SIZE_USDT = Decimal("500") # 每次開倉的倉位價值 (USDT)
-TARGET_VOLUME_USDT = Decimal("1500")# 目標總交易量 (USDT)
+TARGET_VOLUME_USDT = Decimal("2000")# 目標總交易量 (USDT)
 ORDER_TIMEOUT_SECONDS = 10          # 訂單等待成交的超時時間 (秒)
 # ----------------------------
 
