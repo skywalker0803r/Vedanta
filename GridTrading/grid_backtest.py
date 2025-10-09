@@ -27,7 +27,7 @@ BACKTEST_CONFIG = {
     "currency_pair": "XRPUSDT",      # 交易對 (注意：幣安格式為 BTCUSDT，無底線)
     "interval": "1h",                # K線週期 (e.g., "15m", "4h", "1d")
     "end_date": None,                # 結束日期 (格式: "YYYY-MM-DD" 或 None)
-    "data_limit": 1000,              # 要獲取的 K 線數量
+    "data_limit": 24*30*12,          # 要獲取的 K 線數量
 
     # --- 網格策略參數 ---
     # 重要：當 upper_price 和 lower_price 皆為 0 時，會啟用「動態範圍模式」
@@ -240,13 +240,61 @@ import matplotlib.animation as animation
 def animate_performance_comparison(df_klines, grid_equity_curve, trades, investment):
 
 
+
+
+
     """繪製網格交易與買入持有策略的績效對比動畫"""
+
+
+
+
+
+    # --- 開關 ---
+
+
+
+
+
+    show_buy_and_hold = False # 改為 True 可同時顯示「買入持有」曲線
+
+
+
+
+
+
+
+
+
+
+
+    # --- 型別轉換：將 Decimal 轉換為 float 以便繪圖 ---
+
+
+
+
+
+    grid_equity_curve = [float(v) for v in grid_equity_curve]
+
+
+
+
+
+
+
+
+
 
 
     if not grid_equity_curve or len(grid_equity_curve) != len(df_klines):
 
 
+
+
+
         print("無法繪製動畫：數據長度不匹配或無效。")
+
+
+
 
 
         return
@@ -255,13 +303,40 @@ def animate_performance_comparison(df_klines, grid_equity_curve, trades, investm
 
 
 
+
+
+
+
+
+
     # --- 準備數據 ---
 
 
-    buy_and_hold_equity = (float(investment) / df_klines['close'].iloc[0]) * df_klines['close']
+
+
+
+    if show_buy_and_hold:
+
+
+
+
+
+        buy_and_hold_equity = (float(investment) / df_klines['close'].iloc[0]) * df_klines['close']
+
+
+
+
+
+    
+
+
+
 
 
     buy_trades = [t for t in trades if t['type'] == 'buy']
+
+
+
 
 
     sell_trades = [t for t in trades if t['type'] == 'sell']
@@ -270,10 +345,22 @@ def animate_performance_comparison(df_klines, grid_equity_curve, trades, investm
 
 
 
+
+
+
+
+
+
     # --- 建立圖表和座標軸 ---
 
 
+
+
+
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 10), sharex=True, gridspec_kw={'height_ratios': [1, 2]})
+
+
+
 
 
     fig.suptitle('Grid Trading vs. Buy and Hold', fontsize=16)
@@ -282,19 +369,46 @@ def animate_performance_comparison(df_klines, grid_equity_curve, trades, investm
 
 
 
+
+
+
+
+
+
     # 上圖: 權益曲線
+
+
+
 
 
     ax1.set_ylabel('Portfolio Value (USDT)')
 
 
+
+
+
     ax1.grid(True)
+
+
+
 
 
     line_grid, = ax1.plot([], [], lw=2, label='Grid Strategy')
 
 
-    line_bh, = ax1.plot([], [], lw=2, label='Buy and Hold', linestyle='--')
+
+
+
+    if show_buy_and_hold:
+
+
+
+
+
+        line_bh, = ax1.plot([], [], lw=2, label='Buy and Hold', linestyle='--')
+
+
+
 
 
     ax1.legend()
@@ -303,25 +417,52 @@ def animate_performance_comparison(df_klines, grid_equity_curve, trades, investm
 
 
 
+
+
+
+
+
+
     # 下圖: 價格與交易點
+
+
+
 
 
     ax2.set_ylabel('Price (USDT)')
 
 
+
+
+
     ax2.set_xlabel('Date')
+
+
+
 
 
     ax2.grid(True)
 
 
+
+
+
     line_price, = ax2.plot([], [], lw=1.5, color='#6c757d', label='Price')
+
+
+
 
 
     scatter_buys, = ax2.plot([], [], '^', color='#28a745', markersize=8, label='Buy')
 
 
+
+
+
     scatter_sells, = ax2.plot([], [], 'v', color='#dc3545', markersize=8, label='Sell')
+
+
+
 
 
     ax2.legend()
@@ -330,22 +471,70 @@ def animate_performance_comparison(df_klines, grid_equity_curve, trades, investm
 
 
 
+
+
+
+
+
+
     # --- 動畫核心函式 ---
+
+
+
 
 
     def init():
 
 
+
+
+
         # 設定座標軸範圍
+
+
+
 
 
         ax1.set_xlim(df_klines.index[0], df_klines.index[-1])
 
 
-        min_equity = min(buy_and_hold_equity.min(), min(grid_equity_curve)) * 0.98
 
 
-        max_equity = max(buy_and_hold_equity.max(), max(grid_equity_curve)) * 1.02
+
+        if show_buy_and_hold:
+
+
+
+
+
+            min_equity = min(buy_and_hold_equity.min(), min(grid_equity_curve)) * 0.98
+
+
+
+
+
+            max_equity = max(buy_and_hold_equity.max(), max(grid_equity_curve)) * 1.02
+
+
+
+
+
+        else:
+
+
+
+
+
+            min_equity = min(grid_equity_curve) * 0.98
+
+
+
+
+
+            max_equity = max(grid_equity_curve) * 1.02
+
+
+
 
 
         ax1.set_ylim(min_equity, max_equity)
@@ -354,10 +543,49 @@ def animate_performance_comparison(df_klines, grid_equity_curve, trades, investm
 
 
 
+
+
+
+
+
+
         ax2.set_ylim(df_klines['low'].min() * 0.98, df_klines['high'].max() * 1.02)
 
 
-        return line_grid, line_bh, line_price, scatter_buys, scatter_sells
+
+
+
+        
+
+
+
+
+
+        artists = [line_grid, line_price, scatter_buys, scatter_sells]
+
+
+
+
+
+        if show_buy_and_hold:
+
+
+
+
+
+            artists.append(line_bh)
+
+
+
+
+
+        return artists
+
+
+
+
+
+
 
 
 
@@ -366,10 +594,13 @@ def animate_performance_comparison(df_klines, grid_equity_curve, trades, investm
     def update(frame):
 
 
-        # 每次更新一幀 (一個時間點)
+
 
 
         current_time = df_klines.index[frame]
+
+
+
 
 
         x_data = df_klines.index[:frame+1]
@@ -378,19 +609,34 @@ def animate_performance_comparison(df_klines, grid_equity_curve, trades, investm
 
 
 
-        # 更新權益曲線
+
+
+
+
 
 
         line_grid.set_data(x_data, grid_equity_curve[:frame+1])
 
 
-        line_bh.set_data(x_data, buy_and_hold_equity[:frame+1])
+
+
+
+        if show_buy_and_hold:
 
 
 
 
 
-        # 更新價格曲線
+            line_bh.set_data(x_data, buy_and_hold_equity[:frame+1])
+
+
+
+
+
+
+
+
+
 
 
         line_price.set_data(x_data, df_klines['close'][:frame+1])
@@ -399,13 +645,22 @@ def animate_performance_comparison(df_klines, grid_equity_curve, trades, investm
 
 
 
-        # 更新交易點
+
+
+
+
 
 
         frame_buys_x = [t['timestamp'] for t in buy_trades if t['timestamp'] <= current_time]
 
 
+
+
+
         frame_buys_y = [t['price'] for t in buy_trades if t['timestamp'] <= current_time]
+
+
+
 
 
         scatter_buys.set_data(frame_buys_x, frame_buys_y)
@@ -414,19 +669,61 @@ def animate_performance_comparison(df_klines, grid_equity_curve, trades, investm
 
 
 
+
+
+
+
+
+
         frame_sells_x = [t['timestamp'] for t in sell_trades if t['timestamp'] <= current_time]
+
+
+
 
 
         frame_sells_y = [t['price'] for t in sell_trades if t['timestamp'] <= current_time]
 
 
+
+
+
         scatter_sells.set_data(frame_sells_x, frame_sells_y)
+
+
+
 
 
         
 
 
-        return line_grid, line_bh, line_price, scatter_buys, scatter_sells
+
+
+
+        artists = [line_grid, line_price, scatter_buys, scatter_sells]
+
+
+
+
+
+        if show_buy_and_hold:
+
+
+
+
+
+            artists.append(line_bh)
+
+
+
+
+
+        return artists
+
+
+
+
+
+
 
 
 
@@ -435,13 +732,19 @@ def animate_performance_comparison(df_klines, grid_equity_curve, trades, investm
     # --- 建立並顯示動畫 ---
 
 
-    # frames: 總幀數, interval: 每幀之間的毫秒數
+
 
 
     ani = animation.FuncAnimation(fig, update, frames=len(df_klines), init_func=init, blit=True, interval=10)
 
 
-    plt.tight_layout(rect=[0, 0, 1, 0.96]) # 調整佈局以容納主標題
+
+
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+
+
 
 
     plt.show()
