@@ -14,33 +14,28 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from decimal import Decimal, ROUND_DOWN
 import time
+from datetime import datetime
+import requests
 
 # --- 回測設定 ---
 #
-# --- 模式一：使用日期範圍 (推薦) ---
-# 填寫 start_date 和 end_date (格式: "YYYY-MM-DD") 來指定回測期間。
-# 此模式下，data_limit 會被忽略。
-#
-# --- 模式二：使用最新K線 ---
-# 將 start_date 和 end_date 設為 None，程式會改用 data_limit 來獲取最新的 N 條K線。
+# --- 數據獲取設定 (資料來源: 幣安 Binance) ---
+# 程式會獲取在 `end_date` 結束時，往前 `data_limit` 根 K 線。
+# 將 end_date 設為 None 可使用當前最新時間。
 #
 BACKTEST_CONFIG = {
-    "currency_pair": "BTC_USDT", # 交易對
-    "interval": "4h",            # K線週期 (e.g., "15m", "4h", "1d")
-
-    "start_date": "2025-09-01",      # 開單日期 (設為 None 則不使用)
-    "end_date": "2025-10-08",        # 關單日期 (設為 None 則不使用)
-    "data_limit": 500,               # 僅在未指定日期時生效
+    "currency_pair": "XRPUSDT",      # 交易對 (注意：幣安格式為 BTCUSDT，無底線)
+    "interval": "1h",                # K線週期 (e.g., "15m", "4h", "1d")
+    "end_date": None,                # 結束日期 (格式: "YYYY-MM-DD" 或 None)
+    "data_limit": 1000,              # 要獲取的 K 線數量
 
     # --- 網格策略參數 ---
     # 重要：當 upper_price 和 lower_price 皆為 0 時，會啟用「動態範圍模式」
-    #       程式會自動根據歷史數據的 2% 和 98% 分位數來設定網格範圍。
-    #       若要使用手動範圍，請填入非零值。
     "upper_price": Decimal("0"), # 網格上限價格 (設為0以啟用動態範圍)
     "lower_price": Decimal("0"), # 網格下限價格 (設為0以啟用動態範圍)
-    "grid_num": 100,                  # 網格數量 (增加網格數以提高交易頻率)
+    "grid_num": 100,                  # 網格數量
     "total_investment": Decimal("10000"), # 總投資額 (USDT)
-    "fee_rate": Decimal("0")#Decimal("0.0005")     # 交易手續費率 (0.05%)
+    "fee_rate": Decimal("0.0005")     # 交易手續費率 (幣安現貨為 0.05%)
 }
 
 # --- Gate.io API 設定 ---
@@ -49,82 +44,67 @@ BACKTEST_CONFIG = {
 TESTNET_HOST = "https://api-testnet.gateapi.io/api/v4" # 使用測試網獲取數據
 HOST = TESTNET_HOST
 
-from datetime import datetime
+def get_binance_kline(symbol: str, interval: str, end_time: datetime, total_limit: int = 1000) -> pd.DataFrame:
+    """使用 requests 直接從幣安 API 獲取 K 線數據"""
+    base_url = "https://api.binance.com/api/v3/klines"
+    all_data = []
+    # 幣安 API 的 endTime 是包含的，所以我們直接用傳入的時間
+    end_timestamp = int(end_time.timestamp() * 1000)
+    remaining = total_limit
 
-def fetch_gateio_klines(spot_api, currency_pair, interval, limit, start_date_str=None, end_date_str=None) -> pd.DataFrame:
-    """使用 gate-api 獲取 K 線數據並轉換為 pandas DataFrame"""
-    print("\n正在從 Gate.io 獲取 K線數據...")
-    all_candlesticks = []
+    print(f"\n正在從 Binance 獲取 {symbol} 的 {total_limit} 條 {interval} K線數據...")
+    print(f"結束時間點: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    try:
-        if start_date_str and end_date_str:
-            # --- 日期範圍模式 ---
-            from_ts = int(datetime.strptime(start_date_str, "%Y-%m-%d").timestamp())
-            to_ts = int(datetime.strptime(end_date_str, "%Y-%m-%d").timestamp())
-            print(f"模式: 日期範圍 | 從 {start_date_str} 到 {end_date_str}")
+    while remaining > 0:
+        # 幣安 API 單次請求上限為 1000 條
+        fetch_limit = min(1000, remaining)
+        params = {
+            "symbol": symbol.upper(),
+            "interval": interval,
+            "endTime": end_timestamp,
+            "limit": fetch_limit
+        }
 
-            current_from = from_ts
-            while current_from < to_ts:
-                # Gate.io API 單次請求上限為 1000 條
-                candlesticks = spot_api.list_candlesticks(
-                    currency_pair=currency_pair, 
-                    _from=current_from, 
-                    to=to_ts, 
-                    interval=interval,
-                    limit=1000 
-                )
-                if not candlesticks:
-                    break # 該範圍內已無更多數據
+        try:
+            response = requests.get(base_url, params=params, timeout=10)
+            response.raise_for_status() # 如果請求失敗則拋出異常
+            data = response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"API 請求錯誤: {e}")
+            break
 
-                all_candlesticks.extend(candlesticks)
-                
-                # 獲取最後一根K棒的時間戳，並加1秒作為下一次請求的起點，以避免重疊
-                last_ts = int(candlesticks[-1][0])
-                print(f"  已獲取 {len(candlesticks)} 條數據，目前時間點: {datetime.fromtimestamp(last_ts).strftime('%Y-%m-%d %H:%M:%S')}")
+        if not data:
+            break # 沒有更多數據了
 
-                if last_ts >= to_ts:
-                    break # 已達到或超過結束日期
-
-                current_from = last_ts + 1 
-                time.sleep(0.3) # 友善對待 API，避免請求過於頻繁
-        else:
-            # --- 最新K線數量模式 ---
-            print(f"模式: 最新K線 | 獲取最新的 {limit} 條數據")
-            all_candlesticks = spot_api.list_candlesticks(currency_pair=currency_pair, limit=limit, interval=interval)
-
-        if not all_candlesticks:
-            print("錯誤：未獲取到任何數據。")
-            return pd.DataFrame()
-
-        # --- 數據處理 (通用) ---
-        # 根據錯誤訊息，API回傳了8個欄位。我們為所有欄位命名，然後選取我們需要的。
-        all_columns = ['timestamp', 'quote_volume', 'close', 'high', 'low', 'open', 'base_volume', 'turnover']
-        df = pd.DataFrame(all_candlesticks, columns=all_columns)
-
-        # 為了後續處理，我們重新排列並選取標準的 OHLCV 格式
-        df = df[['timestamp', 'open', 'high', 'low', 'close', 'quote_volume']]
-        df.rename(columns={'quote_volume': 'volume'}, inplace=True)
-
-        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s')
+        all_data = data + all_data  # 將舊的數據拼接到前面
         
-        # 移除重複數據並按時間排序
-        df.drop_duplicates(subset=['timestamp'], inplace=True)
-        df.set_index('timestamp', inplace=True)
-        df.sort_index(ascending=True, inplace=True)
+        # 下一次請求的結束時間是本次獲取到的第一條數據的時間戳再減 1 毫秒
+        end_timestamp = data[0][0] - 1
+        remaining -= len(data)
         
-        # 轉換欄位為數值類型
-        for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = pd.to_numeric(df[col])
-            
-        print(f"數據獲取成功！總共 {len(df)} 條不重複數據。")
-        return df
+        print(f"  已獲取 {len(data)} 條數據，目前最早時間點: {datetime.fromtimestamp(data[0][0]/1000).strftime('%Y-%m-%d %H:%M:%S')}")
+        time.sleep(0.3)  # 友善對待 API
 
-    except gate_api.exceptions.GateApiException as ex:
-        print(f"Gate API 錯誤: {ex}")
-        return pd.DataFrame()
-    except Exception as e:
-        print(f"發生未知錯誤: {e}")
-        return pd.DataFrame()
+    if not all_data:
+        raise ValueError("從幣安獲取數據失敗，請檢查參數。")
+
+    df = pd.DataFrame(all_data, columns=[
+        "timestamp", "open", "high", "low", "close", "volume",
+        "close_time", "quote_asset_volume", "number_of_trades",
+        "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume", "ignore"
+    ])
+
+    # --- 數據格式化 ---
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+    df[["open", "high", "low", "close", "volume"]] = df[["open", "high", "low", "close", "volume"]].astype(float)
+    
+    # 移除重複並排序
+    df.drop_duplicates(subset="timestamp", inplace=True)
+    df.set_index("timestamp", inplace=True)
+    df.sort_index(ascending=True, inplace=True)
+
+    print(f"數據獲取成功！總共 {len(df)} 條不重複數據。")
+    return df
 
 def run_grid_backtest(df_klines, config):
     """執行網格交易回測"""
@@ -248,96 +228,364 @@ def run_grid_backtest(df_klines, config):
     print(f"總交易次數 (買+賣): {len(trades)}")
     print(f"當前持倉格數: {len(open_positions)}")
 
-    return portfolio_history
+    return portfolio_history, trades
 
 
-def plot_performance_comparison(df_klines, grid_equity_curve, investment):
-    """繪製網格交易與買入持有策略的績效對比圖"""
-    if not grid_equity_curve:
-        print("無法繪圖：無有效的權益曲線數據。")
+import matplotlib.animation as animation
+
+
+
+
+
+def animate_performance_comparison(df_klines, grid_equity_curve, trades, investment):
+
+
+    """繪製網格交易與買入持有策略的績效對比動畫"""
+
+
+    if not grid_equity_curve or len(grid_equity_curve) != len(df_klines):
+
+
+        print("無法繪製動畫：數據長度不匹配或無效。")
+
+
         return
 
-    # 確保權益曲線長度與K線數據長度一致
-    if len(grid_equity_curve) != len(df_klines):
-        print(f"警告：權益曲線長度({len(grid_equity_curve)})與K線數據長度({len(df_klines)})不匹配，無法繪圖。")
-        return
 
-    # 計算買入並持有策略的權益曲線
-    initial_price = df_klines['close'].iloc[0]
-    buy_and_hold_equity = (float(investment) / initial_price) * df_klines['close']
 
-    # 繪圖
-    plt.style.use('seaborn-v0_8-darkgrid') # 使用一個好看的樣式
-    fig, ax = plt.subplots(figsize=(15, 8))
 
-    ax.plot(df_klines.index, grid_equity_curve, label='Grid Trading Strategy', color='#1f77b4', linewidth=2)
-    ax.plot(df_klines.index, buy_and_hold_equity, label='Buy and Hold Strategy', color='#ff7f0e', linestyle='--')
 
-    # 格式化圖表
-    ax.set_title('Grid Trading vs. Buy and Hold Performance', fontsize=16)
-    ax.set_xlabel('Date', fontsize=12)
-    ax.set_ylabel('Portfolio Value (USDT)', fontsize=12)
-    ax.legend(fontsize=12)
-    ax.grid(True)
-    
-    # 格式化Y軸標籤為貨幣格式
-    from matplotlib.ticker import FuncFormatter
-    formatter = FuncFormatter(lambda x, p: f'${x:,.0f}')
-    ax.yaxis.set_major_formatter(formatter)
+    # --- 準備數據 ---
 
-    fig.tight_layout() # 自動調整邊距
+
+    buy_and_hold_equity = (float(investment) / df_klines['close'].iloc[0]) * df_klines['close']
+
+
+    buy_trades = [t for t in trades if t['type'] == 'buy']
+
+
+    sell_trades = [t for t in trades if t['type'] == 'sell']
+
+
+
+
+
+    # --- 建立圖表和座標軸 ---
+
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 10), sharex=True, gridspec_kw={'height_ratios': [1, 2]})
+
+
+    fig.suptitle('Grid Trading vs. Buy and Hold', fontsize=16)
+
+
+
+
+
+    # 上圖: 權益曲線
+
+
+    ax1.set_ylabel('Portfolio Value (USDT)')
+
+
+    ax1.grid(True)
+
+
+    line_grid, = ax1.plot([], [], lw=2, label='Grid Strategy')
+
+
+    line_bh, = ax1.plot([], [], lw=2, label='Buy and Hold', linestyle='--')
+
+
+    ax1.legend()
+
+
+
+
+
+    # 下圖: 價格與交易點
+
+
+    ax2.set_ylabel('Price (USDT)')
+
+
+    ax2.set_xlabel('Date')
+
+
+    ax2.grid(True)
+
+
+    line_price, = ax2.plot([], [], lw=1.5, color='#6c757d', label='Price')
+
+
+    scatter_buys, = ax2.plot([], [], '^', color='#28a745', markersize=8, label='Buy')
+
+
+    scatter_sells, = ax2.plot([], [], 'v', color='#dc3545', markersize=8, label='Sell')
+
+
+    ax2.legend()
+
+
+
+
+
+    # --- 動畫核心函式 ---
+
+
+    def init():
+
+
+        # 設定座標軸範圍
+
+
+        ax1.set_xlim(df_klines.index[0], df_klines.index[-1])
+
+
+        min_equity = min(buy_and_hold_equity.min(), min(grid_equity_curve)) * 0.98
+
+
+        max_equity = max(buy_and_hold_equity.max(), max(grid_equity_curve)) * 1.02
+
+
+        ax1.set_ylim(min_equity, max_equity)
+
+
+
+
+
+        ax2.set_ylim(df_klines['low'].min() * 0.98, df_klines['high'].max() * 1.02)
+
+
+        return line_grid, line_bh, line_price, scatter_buys, scatter_sells
+
+
+
+
+
+    def update(frame):
+
+
+        # 每次更新一幀 (一個時間點)
+
+
+        current_time = df_klines.index[frame]
+
+
+        x_data = df_klines.index[:frame+1]
+
+
+
+
+
+        # 更新權益曲線
+
+
+        line_grid.set_data(x_data, grid_equity_curve[:frame+1])
+
+
+        line_bh.set_data(x_data, buy_and_hold_equity[:frame+1])
+
+
+
+
+
+        # 更新價格曲線
+
+
+        line_price.set_data(x_data, df_klines['close'][:frame+1])
+
+
+
+
+
+        # 更新交易點
+
+
+        frame_buys_x = [t['timestamp'] for t in buy_trades if t['timestamp'] <= current_time]
+
+
+        frame_buys_y = [t['price'] for t in buy_trades if t['timestamp'] <= current_time]
+
+
+        scatter_buys.set_data(frame_buys_x, frame_buys_y)
+
+
+
+
+
+        frame_sells_x = [t['timestamp'] for t in sell_trades if t['timestamp'] <= current_time]
+
+
+        frame_sells_y = [t['price'] for t in sell_trades if t['timestamp'] <= current_time]
+
+
+        scatter_sells.set_data(frame_sells_x, frame_sells_y)
+
+
+        
+
+
+        return line_grid, line_bh, line_price, scatter_buys, scatter_sells
+
+
+
+
+
+    # --- 建立並顯示動畫 ---
+
+
+    # frames: 總幀數, interval: 每幀之間的毫秒數
+
+
+    ani = animation.FuncAnimation(fig, update, frames=len(df_klines), init_func=init, blit=True, interval=10)
+
+
+    plt.tight_layout(rect=[0, 0, 1, 0.96]) # 調整佈局以容納主標題
+
+
     plt.show()
 
 
+
+
+
 def main():
+
+
     """主執行函數"""
-    # --- 初始化 API 客戶端 ---
-    conf = gate_api.Configuration(host=HOST)
-    api_client = gate_api.ApiClient(conf)
-    spot_api = gate_api.SpotApi(api_client)
+
+
+    # --- 處理日期設定 ---
+
+
+    end_time = datetime.now() # 預設為當前時間
+
+
+    if BACKTEST_CONFIG["end_date"]:
+
+
+        try:
+
+
+            end_time = datetime.strptime(BACKTEST_CONFIG["end_date"], "%Y-%m-%d")
+
+
+        except ValueError:
+
+
+            print(f"錯誤：結束日期格式不正確，請使用 'YYYY-MM-DD' 格式。將使用當前時間代替。")
+
+
+
+
 
     # --- 獲取數據 ---
-    df_klines = fetch_gateio_klines(
-        spot_api,
-        currency_pair=BACKTEST_CONFIG["currency_pair"],
+
+
+    df_klines = get_binance_kline(
+
+
+        symbol=BACKTEST_CONFIG["currency_pair"],
+
+
         interval=BACKTEST_CONFIG["interval"],
-        limit=BACKTEST_CONFIG["data_limit"],
-        start_date_str=BACKTEST_CONFIG["start_date"],
-        end_date_str=BACKTEST_CONFIG["end_date"]
+
+
+        end_time=end_time,
+
+
+        total_limit=BACKTEST_CONFIG["data_limit"]
+
+
     )
 
+
+
+
+
     if df_klines.empty:
+
+
         return
 
-    # --- 檢查並設定網格區間 ---
-    # 如果使用者沒有設定價格區間 (預設為0)，則動態計算
-    if BACKTEST_CONFIG["lower_price"] == Decimal("0") and BACKTEST_CONFIG["upper_price"] == Decimal("0"):
-        print("\n未設定手動價格區間，啟用動態範圍模式...")
-        # 使用分位數來避免極端值對網格範圍的影響
-        low_quantile = df_klines['low'].quantile(0.02)   # 取2%分位數為下界
-        high_quantile = df_klines['high'].quantile(0.98)  # 取98%分位數為上界
 
-        # 使用過濾後的價格範圍來設定網格
+
+
+
+    # --- 檢查並設定網格區間 ---
+
+
+    if BACKTEST_CONFIG["lower_price"] == Decimal("0") and BACKTEST_CONFIG["upper_price"] == Decimal("0"):
+
+
+        print("\n未設定手動價格區間，啟用動態範圍模式...")
+
+
+        low_quantile = df_klines['low'].quantile(0.02)
+
+
+        high_quantile = df_klines['high'].quantile(0.98)
+
+
+
+
+
         data_min_price = Decimal(str(low_quantile))
+
+
         data_max_price = Decimal(str(high_quantile))
+
+
         
+
+
         print(f"使用分位數設定網格範圍：")
+
+
         print(f"價格上界 (98%): {data_max_price.quantize(Decimal('0.01'))}")
+
+
         print(f"價格下界 (2%): {data_min_price.quantize(Decimal('0.01'))}")
 
+
+
+
+
         BACKTEST_CONFIG["upper_price"] = data_max_price
+
+
         BACKTEST_CONFIG["lower_price"] = data_min_price
+
+
     else:
+
+
         print("\n檢測到手動設定的價格區間，將使用該設定進行回測。")
 
-    
-    # --- 執行回測 ---
-    # 注意：回測本身仍然在完整的原始數據上運行
-    portfolio_history = run_grid_backtest(df_klines, BACKTEST_CONFIG)
 
-    # --- 繪製績效圖 ---
-    if portfolio_history:
-        plot_performance_comparison(df_klines, portfolio_history, BACKTEST_CONFIG["total_investment"])
+
+
+
+    
+
+
+    # --- 執行回測 ---
+
+
+    portfolio_history, trades = run_grid_backtest(df_klines, BACKTEST_CONFIG)
+
+
+
+
+
+    # --- 繪製績效動畫 ---
+
+
+    if portfolio_history and trades is not None:
+
+
+        animate_performance_comparison(df_klines, portfolio_history, trades, BACKTEST_CONFIG["total_investment"])
 
 
 if __name__ == "__main__":
