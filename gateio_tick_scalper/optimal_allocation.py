@@ -61,8 +61,8 @@ def optimal_hummingbot_allocation(r, N, M, tol=1e-8, max_iter=1000):
 if __name__ == "__main__":
     # === 使用範例 ===
     # 輸入池子的參數
-    r1, r2, r3 = 362080, 144137, 42295 #每週獎勵
-    N1, N2, N3 = 17278, 32166, 25282 #總流動性
+    r1, r2, r3 = 500, 200, 323 #每週獎勵
+    N1, N2, N3 = 7338, 4680, 8100 #總流動性
     M = 1000 #本金
 
     r = [r1, r2, r3]
@@ -76,3 +76,16 @@ if __name__ == "__main__":
         print(f"  池{i}: {mi:.2f}")
     print(f"合計: {total:.2f} (總資金 {M})")
     print(f"最優lambda:{lambda_opt}")
+    # === 計算預期總報酬 ===
+    expected_rewards = []
+    for i in range(len(r)):
+        Ri = r[i] * (m[i] / (N[i] + m[i]))
+        expected_rewards.append(Ri)
+
+    total_reward = sum(expected_rewards)
+
+    print("\n預期每週報酬：")
+    for i, Ri in enumerate(expected_rewards, 1):
+        print(f"  池{i}: {Ri:.4f}")
+    print(f"總預期報酬: {total_reward:.4f}")
+    print(f"預期年化報酬率: {total_reward / M * 52 * 100:.2f}%")
