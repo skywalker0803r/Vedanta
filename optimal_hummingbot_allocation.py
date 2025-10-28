@@ -55,7 +55,7 @@ def optimal_hummingbot_allocation(r, N, M, tol=1e-8, max_iter=1000):
         mi = math.sqrt(r[i] * N[i] / lambda_opt) - N[i]
         m.append(max(mi, 0))
 
-    return m
+    return m,lambda_opt
 
 
 if __name__ == "__main__":
@@ -68,10 +68,11 @@ if __name__ == "__main__":
     r = [r1, r2, r3]
     N = [N1, N2, N3]
 
-    m = optimal_hummingbot_allocation(r, N, M)
+    m,lambda_opt = optimal_hummingbot_allocation(r, N, M)
     total = sum(m)
 
     print("最優資金分配結果：")
     for i, mi in enumerate(m, 1):
         print(f"  池{i}: {mi:.2f}")
     print(f"合計: {total:.2f} (總資金 {M})")
+    print(f"最優lambda:{lambda_opt}")
