@@ -29,9 +29,9 @@ HOST = LIVE_HOST      # <- 正式上線
 # --- 交易參數 ---
 SETTLE = "usdt"                     # 結算貨幣 (usdt / btc)
 CONTRACT = "ON_USDT"               # 交易對
-LEVERAGE = "10"                      # 槓桿倍數
-POSITION_SIZE_USDT = Decimal("160") # 每次開倉的倉位價值 (USDT)
-TARGET_VOLUME_USDT = Decimal("12000")# 目標總交易量 (USDT)
+LEVERAGE = "3"                      # 槓桿倍數
+POSITION_SIZE_USDT = Decimal("50") # 每次開倉的倉位價值 (USDT)
+TARGET_VOLUME_USDT = Decimal("34000")# 目標總交易量 (USDT)
 ORDER_TIMEOUT_SECONDS = 10          # 訂單等待成交的超時時間 (秒)
 # ----------------------------
 

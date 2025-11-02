@@ -29,7 +29,7 @@ HOST = LIVE_HOST      # <- 正式上線
 # --- 交易參數 ---
 CURRENCY_PAIR = "ON_USDT"       # 交易對
 PRINCIPAL_USDT = Decimal("50")   # 每次投入的本金 (USDT)
-TARGET_VOLUME_USDT = Decimal("500") # 目標總交易量 (USDT)
+TARGET_VOLUME_USDT = Decimal("25000") # 目標總交易量 (USDT)
 ORDER_TIMEOUT_SECONDS = 10       # 訂單等待成交的超時時間 (秒)
 # ----------------------------
 
