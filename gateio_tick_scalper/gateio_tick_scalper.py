@@ -31,8 +31,8 @@ HOST = LIVE_HOST
 
 # --- 【*** 策略模式選擇 ***】 ---
 # 模式 1: Maker-Taker (Maker掛單買, Taker市價賣)
-# 模式 2: Taker-Taker (Taker限價買, Taker市價賣)
-STRATEGY_MODE = 2 # ★★★ 請在此選擇 1 或 2 ★★★
+# 模式 2: Taker-Taker (Taker市價買, Taker市價賣)
+STRATEGY_MODE = 1 # ★★★ 請在此選擇 1 或 2 ★★★
 # --------------------------------
 
 # --- 交易參數 ---
